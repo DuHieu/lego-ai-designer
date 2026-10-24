@@ -1252,14 +1252,14 @@ export const BrickScene = ({
     const minZ = Math.min(defaultGridExtent * -1, modelMinZ - gridPadding)
     const maxZ = Math.max(defaultGridExtent, modelMaxZ + gridPadding)
     const size = Math.ceil(Math.max(maxX - minX, maxZ - minZ))
-    const cameraSize = Math.max(8, Math.max(modelMaxX - modelMinX, modelMaxZ - modelMinZ) + gridPadding * 2)
+    const cameraSize = Math.max(8, Math.max(modelMaxX - modelMinX, modelMaxZ - modelMinZ, maxY * 1.35) + gridPadding * 2)
 
     return {
       size,
       cameraSize,
       centerX: (minX + maxX) / 2,
       modelCenterX: (modelMinX + modelMaxX) / 2,
-      centerY: Math.max(1, maxY / 6),
+      centerY: Math.max(1, maxY * 0.42),
       centerZ: (minZ + maxZ) / 2,
       modelCenterZ: (modelMinZ + modelMaxZ) / 2,
     }

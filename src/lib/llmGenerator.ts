@@ -2,14 +2,31 @@ import { brickById, brickDefinitions } from '../data/basicBricks'
 import type { BrickColor, BuildCategoryOption, BuildPlan, GeneratorInput, LlmConfig, PlacedBrick } from '../types/bricks'
 import { generateBuildPlan } from './localGenerator'
 import { PLATE_HEIGHT_WORLD, WORLD_EDIT_STEP_STUDS, normalizeHorizontalStud, normalizeYStud, plateHeightToWorldStud } from './brickUnits'
-import { createId, createSingleBrickSteps, getBlockingBuildPlanIssues, hasBrickCollision, isBrickSupported, makeBrick, summarizeBuildPlanIssues, validateBuildPlan } from './planUtils'
+import { createId, createSingleBrickSteps, getBlockingBuildPlanIssues, hasBrickCollision, isBrickSupported, makeBrick, snapBrickToPlan, summarizeBuildPlanIssues, validateBuildPlan } from './planUtils'
 import { AI_PROVIDERS, detectProviderFromEndpoint } from './aiProviders'
 import { getCategoryPalette, resolveBuildCategory } from './promptPalette'
-import { formatPrefabModulesForPrompt } from './prefabModules'
+import { PREFAB_MODULES, formatPrefabModulesForPrompt } from './prefabModules'
+import {
+  convertStandaloneModelToPlacedBricks,
+  getBrickSupportCellsInfo,
+  resolvePromptColorPalette,
+  toRepairFeedback,
+  validateBuildPlanSemanticsAndPhysics,
+  type Model as StandaloneModel,
+} from './physicsValidator'
 
 type LlmBrick = {
+  id?: unknown
   brickId?: unknown
+  partNum?: unknown
+  role?: unknown
+  orientation?: unknown
+  attachedTo?: unknown
   color?: unknown
+  x?: unknown
+  y?: unknown
+  z?: unknown
+  rot?: unknown
   xStud?: unknown
   yStud?: unknown
   yPlate?: unknown
@@ -28,7 +45,11 @@ type LlmBrick = {
 
 type LlmPlan = {
   title?: unknown
+  name?: unknown
+  archetype?: unknown
+  palette?: unknown
   bricks?: unknown
+  parts?: unknown
 }
 
 export type LlmGenerationStage = 'pass1' | 'pass2' | 'repair' | 'remix'
@@ -233,11 +254,17 @@ const formatOfficialReplicaExample = () => {
 
 export const buildLlmUserPrompt = ({ prompt, imageName, category }: GeneratorInput) => {
   const palette = formatPaletteForPrompt(prompt, category)
+  const resolvedColors = resolvePromptColorPalette(prompt)
+  const resolvedPaletteLine = resolvedColors
+    ? `Mandatory resolved color palette (>= 70% of parts MUST use these colors): ${resolvedColors.colors.join(', ')} (${resolvedColors.legoNames.join(' + ')})`
+    : 'Color palette: choose 2-3 harmonious official LEGO colors matching the subject.'
+
   return `You generate recognizable, structurally sound 3D LEGO brick build plans for a browser 3D editor.
 
 User request: ${prompt}
 Reference image file name: ${imageName || 'none'}
 Detected build category: ${palette.label}
+${resolvedPaletteLine}
 
 Available parts (curated palette for this category):
 ${palette.parts}
@@ -248,11 +275,13 @@ ${palette.techniques}
 VERIFIED PREFAB SUB-ASSEMBLIES (Copy or adapt these exact coordinate patterns for reliable foundation & SNOT fit):
 ${palette.prefabs}
 
-SNOT (STUDS NOT ON TOP) GEOMETRY:
+SNOT (STUDS NOT ON TOP) & EYE ORIENTATION RULES:
 - 5 plates stacked (5 x 0.4 = 2.0 studs) equal exactly 2 studs of width, so sideways-mounted parts line up with the grid.
-- bracket-1x2-2x2 turns a 2x2 stud face to point sideways; brick-side-studs-* and headlight-brick-1x1 expose studs on their side faces.
-- A part mounted on a side stud uses verticalQuarterTurns = 1 (or 3) and must sit flush against that face.
-- Use SNOT only where it adds detail (eyes, lights, grilles, armor); keep the core structure stacked normally.
+- bracket-1x2-2x2 turns a 2x2 stud face to point sideways; brick-side-studs-* and headlight-brick-1x1 expose studs on their side faces (facing z- when rotationQuarterTurns = 0).
+- Eyes (tile-eye-1x1) on a robot, character, or creature MUST NEVER face up toward the sky (verticalQuarterTurns = 0 is FORBIDDEN for eyes).
+- Always mount tile-eye-1x1 on the front side stud of headlight-brick-1x1 with:
+  * headlight-brick-1x1 at (xStud: X, yStud: Y, zStud: Z, rotationQuarterTurns: 0, verticalQuarterTurns: 0)
+  * tile-eye-1x1 at (xStud: X, yStud: Y + 0.2, zStud: Z - 0.2, rotationQuarterTurns: 0, verticalQuarterTurns: 1)
 
 CRITICAL HEIGHT & STACKING MATH:
 - Standard Bricks (brick-*): Height = 1.2 studs (3 plates)
@@ -270,25 +299,28 @@ CRITICAL HEIGHT & STACKING MATH:
   * Level 7 (after 3 bricks + 1 plate): y = 4.0
   * Level 8 (after 4 bricks): y = 4.8
 
-MULTILINGUAL COLOR INTERPRETATION & PALETTE:
-- Understand user language (e.g. Vietnamese):
-  * "xanh" / "xanh dương" = blue, "xanh ngọc" / "cyan" = cyan, "xanh lá" = green
-  * "xám" = gray, "vàng" = yellow, "đỏ" = red, "đen" = black, "trắng" = white, "cam" = orange
-- TWO-TONE COLOR HARMONY: If the user requests two colors (e.g. "xanh xám" -> blue & gray), distribute both colors across the model!
-  * Primary color (e.g. blue) for main armor / torso / head.
-  * Secondary color (e.g. gray or black) for base / limbs / joints.
-  * Eyes: tile-eye-1x1 (color: white).
+HARD PHYSICAL & CANTILEVER RULES:
+1. Every part must connect to the ground (yStud = 0) through a continuous chain of stud/SNOT connections. No floating parts.
+2. Tiles (tile-*) and studless slopes (slope-2x2, slope-curved-*) have NO top studs: nothing may rest on top of them.
+3. Every non-1x1 part above yStud = 0 must be held by >= 2 studs total.
+4. Overhang limit: >= 50% of every part's horizontal footprint must rest on (or be clamped by) other parts. NEVER cantilever a 1x4 or 2x4 plate/brick sticking out off 1-2 studs.
+5. Center of mass must stay inside the ground base footprint.
 
-BUILD DESIGN & ANATOMY RULES:
-- Use 1 to ${maxLlmBricks} bricks. Aim for 18 to 35 bricks for a detailed, recognizable build with distinct body parts.
-- For character / creature / robot models:
-  * Base/Feet: Stable footing at y=0 (e.g. left foot at x=1, right foot at x=4, or a base plate like plate-4x6).
-  * Legs: Rising columns.
-  * Waist/Pelvis: A spanning piece locking legs together.
-  * Torso: Main central body block.
-  * Arms: Extended on left and right sides.
-  * Head & Face: Centered on top with tile-eye-1x1 on front.
-  * Antenna / Ears / Details on crown.
+VIETNAMESE & MULTILINGUAL COLOR MAPPING:
+- "xanh xám", "xanh ghi", "blue gray" -> cyan (Sand Blue / Medium Azure) + gray (Dark/Light Bluish Gray) + blue accent. At least 35% gray and 35% cyan/blue (>= 75% combined). Do NOT build a monochrome dark blue block!
+- "xám", "ghi" -> gray + white/black accents
+- "xanh dương", "xanh biển" -> blue + cyan
+- "xanh lá" -> green + lime
+- "đỏ" -> red; "vàng" -> yellow; "cam" -> orange; "trắng" -> white; "đen" -> black; "nâu" -> brown/tan; "hồng" -> pink
+
+ARCHETYPE ANATOMY & SILHOUETTE RULES:
+- Use 1 to ${maxLlmBricks} bricks.
+- For robot / character models (>= 22 bricks required, upright bipedal silhouette with height >= 6.4 studs):
+  * Legs (x2): Two separated rising columns (e.g. left leg at xStud=1, right leg at xStud=4, yStud=0..2.8) in gray/cyan.
+  * Pelvis & Torso: Spanning plate-2x4 waist at yStud=2.8 and 2-tier brick-2x4 torso (yStud=3.2..6.0) with plate-2x6 shoulder bridge at yStud=4.4.
+  * Arms (x2): Symmetrical left arm at xStud=0 and right arm at xStud=5 mounted on the shoulder bridge.
+  * Neck & Head: Narrower 2x2 neck plate at yStud=6.0, head at yStud=6.4 with two headlight-brick-1x1 and two forward-facing tile-eye-1x1 (verticalQuarterTurns=1 at yStud=6.6, zStud=1.8).
+  * Crown & Antenna: Top plate-2x2 at yStud=7.6 with brick-round-1x1 + round-1x1-plate antenna.
 - Coordinates: xStud, yStud, zStud in 0.1 increments. Keep within x=0..8, z=0..6.
 - Every brick item MUST strictly have keys:
   "brickId", "color", "xStud", "yStud", "zStud", "rotationQuarterTurns", "verticalQuarterTurns"
@@ -661,6 +693,168 @@ const lowerUntilSupported = (brick: PlacedBrick, placed: PlacedBrick[]) => {
   return undefined
 }
 
+const clampOverhangOrWeakBrick = (
+  brick: PlacedBrick,
+  placed: PlacedBrick[],
+): { brick?: PlacedBrick; shifted: boolean; reason?: string } => {
+  const initialInfo = getBrickSupportCellsInfo(brick, placed)
+  if (!initialInfo.isOverhang && !initialInfo.isWeakConnection) {
+    return { brick, shifted: false }
+  }
+
+  let bestCandidate: PlacedBrick | undefined
+  let bestScore = -1
+
+  for (let radius = 1; radius <= 2; radius += 1) {
+    for (let zOffset = -radius; zOffset <= radius; zOffset += 1) {
+      for (let xOffset = -radius; xOffset <= radius; xOffset += 1) {
+        if (xOffset === 0 && zOffset === 0) continue
+        const candidate: PlacedBrick = {
+          ...brick,
+          pose: {
+            ...brick.pose,
+            xStud: normalizeHorizontalStud(brick.pose.xStud + xOffset),
+            zStud: normalizeHorizontalStud(brick.pose.zStud + zOffset),
+          },
+        }
+        if (hasBrickCollision(candidate, placed) || !isBrickSupported(candidate, placed)) {
+          continue
+        }
+        const info = getBrickSupportCellsInfo(candidate, placed)
+        if (!info.isOverhang && !info.isWeakConnection && info.supportRatio > bestScore) {
+          bestScore = info.supportRatio
+          bestCandidate = candidate
+        }
+      }
+    }
+    if (bestCandidate) break
+  }
+
+  if (bestCandidate) {
+    return {
+      brick: bestCandidate,
+      shifted: true,
+      reason: initialInfo.isOverhang ? 'overhang >50%' : 'weak <2-stud connection',
+    }
+  }
+
+  return {
+    brick: undefined,
+    shifted: false,
+    reason: initialInfo.isOverhang
+      ? `cantilevered overhang (${Math.round(initialInfo.supportRatio * 100)}% supported)`
+      : `weak single-stud connection (${initialInfo.supportedCount}/${initialInfo.totalCells} studs)`,
+  }
+}
+
+const rebalanceBricksToPromptPalette = (bricks: PlacedBrick[], prompt?: string): PlacedBrick[] => {
+  if (!prompt || bricks.length === 0) return bricks
+  const paletteRule = resolvePromptColorPalette(prompt)
+  if (!paletteRule) return bricks
+
+  const allowedSet = new Set<BrickColor>(paletteRule.allowedColors)
+  const matchingCount = bricks.filter((b) => allowedSet.has(b.color)).length
+  const matchRatio = matchingCount / bricks.length
+
+  const primaryCount = bricks.filter((b) => b.color === paletteRule.primaryColor).length
+  const secondaryCount = paletteRule.secondaryColor
+    ? bricks.filter((b) => b.color === paletteRule.secondaryColor).length
+    : primaryCount
+
+  const needsTwoToneBalance =
+    Boolean(paletteRule.secondaryColor) &&
+    (primaryCount / bricks.length < 0.2 || secondaryCount / bricks.length < 0.2)
+
+  if (matchRatio >= 0.75 && !needsTwoToneBalance) {
+    return bricks
+  }
+
+  const ys = bricks.map((b) => b.pose.yStud)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const spanY = Math.max(1.2, maxY - minY)
+
+  return bricks.map((brick, index) => {
+    const def = brickById.get(brick.brickId)
+    if (!def) return brick
+
+    // Keep eye tiles and tiny indicator lights in their expressive colors
+    if (
+      brick.brickId === 'tile-eye-1x1' ||
+      ((brick.brickId === 'round-1x1-plate' || brick.brickId === 'slope-cheese-1x1') &&
+        (brick.color === 'white' || brick.color === 'yellow' || brick.color === 'orange' || brick.color === 'red') &&
+        index >= bricks.length - 4)
+    ) {
+      return brick
+    }
+
+    const relativeY = (brick.pose.yStud - minY) / spanY
+    let targetColor: BrickColor = paletteRule.primaryColor
+
+    if (paletteRule.secondaryColor) {
+      if (relativeY < 0.42 || def.kind === 'plate' || brick.brickId.includes('side-studs') || brick.brickId.includes('headlight')) {
+        targetColor = paletteRule.secondaryColor
+      } else if (paletteRule.accentColor && index % 6 === 0) {
+        targetColor = paletteRule.accentColor
+      } else {
+        targetColor = paletteRule.primaryColor
+      }
+    } else if (!allowedSet.has(brick.color)) {
+      targetColor = paletteRule.primaryColor
+    } else {
+      targetColor = brick.color
+    }
+
+    const safeColor = def.colors.includes(targetColor)
+      ? targetColor
+      : def.colors.find((c) => allowedSet.has(c)) ?? def.colors[0]
+
+    return {
+      ...brick,
+      color: safeColor,
+    }
+  })
+}
+
+export const buildVerifiedRobotSkeletonBricks = (prompt?: string): PlacedBrick[] => {
+  const paletteRule = prompt ? resolvePromptColorPalette(prompt) : undefined
+  const primary: BrickColor = paletteRule?.primaryColor ?? 'cyan'
+  const secondary: BrickColor = paletteRule?.secondaryColor ?? 'gray'
+  const accent: BrickColor = paletteRule?.accentColor ?? 'blue'
+
+  const mechaPrefab = PREFAB_MODULES.character.find((m) => m.id === 'creator-biped-mecha-core')
+  if (!mechaPrefab) return []
+
+  return mechaPrefab.sampleBricks.map((item, idx) => {
+    const def = brickById.get(item.brickId)
+    const fallbackColor = item.color as BrickColor
+    let chosenColor: BrickColor = fallbackColor
+    if (item.brickId === 'tile-eye-1x1') {
+      chosenColor = 'white'
+    } else if (item.brickId === 'round-1x1-plate' || item.brickId === 'tile-grille-1x2') {
+      chosenColor = def?.colors.includes(accent) ? accent : fallbackColor
+    } else if (item.color === 'gray') {
+      chosenColor = def?.colors.includes(secondary) ? secondary : fallbackColor
+    } else if (item.color === 'cyan' || item.color === 'blue') {
+      chosenColor = idx % 7 === 0 && def?.colors.includes(accent)
+        ? accent
+        : def?.colors.includes(primary)
+          ? primary
+          : fallbackColor
+    }
+    const safeColor = def && def.colors.includes(chosenColor) ? chosenColor : (def?.colors[0] ?? fallbackColor)
+    return makeBrick(
+      item.brickId,
+      safeColor,
+      item.xStud,
+      item.yStud,
+      item.zStud,
+      item.rotationQuarterTurns,
+      item.verticalQuarterTurns ?? 0,
+    )
+  })
+}
+
 type NormalizationDiagnostics = {
   rawCount: number
   placedCount: number
@@ -679,11 +873,36 @@ const isSurfaceDetailPart = (brickId: string, kind: string) =>
   brickId.includes('headlight') ||
   brickId.includes('bracket')
 
+const resolveBrickDefinition = (rawBrick: LlmBrick) => {
+  const rawId = asString(rawBrick.brickId) || asString(rawBrick.partNum)
+  if (!rawId) return undefined
+  const direct = brickById.get(rawId)
+  if (direct) return direct
+  return brickDefinitions.find((d) => d.partNumber === rawId)
+}
+
 const normalizeBricksWithDiagnostics = (
   rawBricks: unknown,
   locale: LlmLocale,
+  prompt?: string,
+  rawPlan?: LlmPlan,
 ): { bricks: PlacedBrick[]; diagnostics: NormalizationDiagnostics } => {
-  if (!Array.isArray(rawBricks)) throw new Error(llmText[locale].missingBricks)
+  let sourceBricks: unknown[] = Array.isArray(rawBricks) ? rawBricks : []
+  if (sourceBricks.length === 0 && rawPlan && Array.isArray(rawPlan.parts)) {
+    const converted = convertStandaloneModelToPlacedBricks(rawPlan as unknown as StandaloneModel)
+    sourceBricks = converted.map((b) => ({
+      brickId: b.brickId,
+      color: b.color,
+      xStud: b.pose.xStud,
+      yStud: b.pose.yStud,
+      zStud: b.pose.zStud,
+      rotationQuarterTurns: b.pose.rotationQuarterTurns,
+      verticalQuarterTurns: b.pose.verticalQuarterTurns ?? 0,
+    }))
+  }
+  if (!Array.isArray(rawBricks) && sourceBricks.length === 0) {
+    throw new Error(llmText[locale].missingBricks)
+  }
 
   const placed: PlacedBrick[] = []
   const placedCounts = new Map<string, number>()
@@ -692,11 +911,11 @@ const normalizeBricksWithDiagnostics = (
   const loweredBricks: string[] = []
   let surfaceDetailCount = 0
 
-  for (const rawBrick of rawBricks.slice(0, maxLlmBricks)) {
+  for (const rawBrick of sourceBricks.slice(0, maxLlmBricks)) {
     if (!isRecord(rawBrick)) continue
     const brick = rawBrick as LlmBrick
-    const brickId = asString(brick.brickId)
-    const definition = brickById.get(brickId)
+    const definition = resolveBrickDefinition(brick)
+    const brickId = definition?.id ?? asString(brick.brickId)
     if (!definition) {
       if (brickId) droppedReasons.push(`unknown part "${brickId}"`)
       continue
@@ -710,21 +929,55 @@ const normalizeBricksWithDiagnostics = (
     const pose = isRecord(brick.pose) ? brick.pose : {}
     const color = asColor(brick.color, definition.colors[0])
     const safeColor = definition.colors.includes(color) ? color : definition.colors[0]
-    const rawX = asHorizontalStudGrid(brick.xStud ?? pose.xStud, 0)
+    const rawX = asHorizontalStudGrid(brick.xStud ?? brick.x ?? pose.xStud, 0)
     const rawY = brick.yStud !== undefined || pose.yStud !== undefined
       ? asWorldStudGrid(brick.yStud ?? pose.yStud, 0)
-      : asLegacyPlateGrid(brick.yPlate ?? pose.yPlate, 0)
-    const rawZ = asHorizontalStudGrid(brick.zStud ?? pose.zStud, 0)
-    const candidate = makeBrick(
+      : brick.y !== undefined
+        ? asLegacyPlateGrid(brick.y, 0)
+        : asLegacyPlateGrid(brick.yPlate ?? pose.yPlate, 0)
+    const rawZ = asHorizontalStudGrid(brick.zStud ?? brick.z ?? pose.zStud, 0)
+    const rawRot = clampRotation(brick.rotationQuarterTurns ?? pose.rotationQuarterTurns ?? (typeof brick.rot === 'number' ? Math.round(brick.rot / 90) : 0))
+    let rawVert = clampRotation(brick.verticalQuarterTurns ?? pose.verticalQuarterTurns)
+    if (rawVert === 0 && typeof brick.orientation === 'string' && brick.orientation !== 'up') {
+      rawVert = 1
+    }
+
+    let candidate = makeBrick(
       brickId,
       safeColor,
       rawX,
       rawY,
       rawZ,
-      clampRotation(brick.rotationQuarterTurns ?? pose.rotationQuarterTurns),
-      clampRotation(brick.verticalQuarterTurns ?? pose.verticalQuarterTurns),
+      rawRot,
+      rawVert,
     )
-    const snapped = candidate
+
+    // Auto-fix upward-facing eyes if a SNOT side-stud brick is available in the model
+    if (brickId === 'tile-eye-1x1' && (candidate.pose.verticalQuarterTurns ?? 0) === 0) {
+      const snotHostExists = placed.some(
+        (b) => b.brickId === 'headlight-brick-1x1' || b.brickId.startsWith('brick-side-studs-'),
+      )
+      if (snotHostExists) {
+        const snotEyeCandidate: PlacedBrick = {
+          ...candidate,
+          pose: {
+            ...candidate.pose,
+            verticalQuarterTurns: 1,
+          },
+        }
+        const snappedEye = snapBrickToPlan(snotEyeCandidate, placed)
+        if (!hasBrickCollision(snappedEye, placed) && isBrickSupported(snappedEye, placed)) {
+          candidate = snappedEye
+          nudgedBricks.push(`${brickId} rotated to verticalQuarterTurns=1 and snapped to SNOT side stud so eye faces forward`)
+        }
+      }
+    }
+
+    // Snap SNOT side-stud parts or slightly misaligned parts to valid connectors
+    const snapped = (candidate.pose.verticalQuarterTurns ?? 0) !== 0
+      ? snapBrickToPlan(candidate, placed)
+      : candidate
+
     const openBrick = nudgeToNearbyOpenPose(snapped, placed)
     if (!openBrick) {
       droppedReasons.push(`${brickId} at (${rawX}, ${rawY}, ${rawZ}) collided and had no open nearby spot`)
@@ -734,7 +987,9 @@ const normalizeBricksWithDiagnostics = (
       nudgedBricks.push(`${brickId} nudged from (${rawX}, ${rawY}, ${rawZ}) to (${openBrick.pose.xStud}, ${rawY}, ${openBrick.pose.zStud}) due to collision`)
     }
 
-    const supportedBrick = lowerUntilSupported(openBrick, placed)
+    const supportedBrick = (openBrick.pose.verticalQuarterTurns ?? 0) !== 0 && isBrickSupported(openBrick, placed)
+      ? openBrick
+      : lowerUntilSupported(openBrick, placed)
     if (!supportedBrick) {
       droppedReasons.push(`${brickId} at (${openBrick.pose.xStud}, ${rawY}, ${openBrick.pose.zStud}) had no vertical support below`)
       continue
@@ -743,7 +998,21 @@ const normalizeBricksWithDiagnostics = (
       loweredBricks.push(`${brickId} floated at y=${rawY} and was lowered to y=${supportedBrick.pose.yStud}`)
     }
 
-    const finalBrick = normalizeBrickPose(supportedBrick)
+    // Enforce overhang (<= 50% unsupported) and >= 2-stud connection rules for horizontal bricks
+    let validatedSupportBrick = supportedBrick
+    if ((supportedBrick.pose.verticalQuarterTurns ?? 0) === 0 && supportedBrick.pose.yStud > 0) {
+      const clampResult = clampOverhangOrWeakBrick(supportedBrick, placed)
+      if (!clampResult.brick) {
+        droppedReasons.push(`${brickId} at (${supportedBrick.pose.xStud}, ${supportedBrick.pose.yStud}, ${supportedBrick.pose.zStud}) dropped due to ${clampResult.reason}`)
+        continue
+      }
+      if (clampResult.shifted) {
+        nudgedBricks.push(`${brickId} shifted inward to (${clampResult.brick.pose.xStud}, ${clampResult.brick.pose.yStud}, ${clampResult.brick.pose.zStud}) to fix ${clampResult.reason}`)
+      }
+      validatedSupportBrick = clampResult.brick
+    }
+
+    const finalBrick = normalizeBrickPose(validatedSupportBrick)
     placed.push(finalBrick)
     placedCounts.set(brickId, currentCount + 1)
     if (isSurfaceDetailPart(brickId, definition.kind)) {
@@ -752,11 +1021,13 @@ const normalizeBricksWithDiagnostics = (
   }
 
   if (placed.length === 0) throw new Error(llmText[locale].noUsableParts)
+  const rebalanced = rebalanceBricksToPromptPalette(placed, prompt)
+
   return {
-    bricks: placed,
+    bricks: rebalanced,
     diagnostics: {
-      rawCount: rawBricks.length,
-      placedCount: placed.length,
+      rawCount: sourceBricks.length,
+      placedCount: rebalanced.length,
       droppedReasons,
       nudgedBricks,
       loweredBricks,
@@ -839,6 +1110,7 @@ const buildLlmRefinementPrompt = ({
   currentBricks,
   diagnostics,
   validationSummary,
+  semanticFeedback,
 }: {
   prompt: string
   category?: BuildCategoryOption
@@ -846,6 +1118,7 @@ const buildLlmRefinementPrompt = ({
   currentBricks: PlacedBrick[]
   diagnostics: NormalizationDiagnostics
   validationSummary: string
+  semanticFeedback?: string
 }) => {
   const palette = formatPaletteForPrompt(prompt, category)
   const serializedCurrent = currentBricks.map((brick) => ({
@@ -862,18 +1135,19 @@ const buildLlmRefinementPrompt = ({
     `- Placed bricks: ${diagnostics.placedCount} (from ${diagnostics.rawCount} requested)`,
     `- Surface detail pieces (slopes / tiles / SNOT): ${diagnostics.surfaceDetailCount}`,
     ...(diagnostics.droppedReasons.length > 0
-      ? [`- Dropped bricks due to collision/floating: ${diagnostics.droppedReasons.slice(0, 6).join('; ')}`]
+      ? [`- Dropped bricks due to collision/floating/overhang: ${diagnostics.droppedReasons.slice(0, 6).join('; ')}`]
       : []),
     ...(diagnostics.nudgedBricks.length > 0
-      ? [`- Colliding bricks that had to be shifted: ${diagnostics.nudgedBricks.slice(0, 6).join('; ')}`]
+      ? [`- Shifted bricks: ${diagnostics.nudgedBricks.slice(0, 6).join('; ')}`]
       : []),
     ...(diagnostics.loweredBricks.length > 0
-      ? [`- Floating bricks that had to be lowered: ${diagnostics.loweredBricks.slice(0, 6).join('; ')}`]
+      ? [`- Lowered floating bricks: ${diagnostics.loweredBricks.slice(0, 6).join('; ')}`]
       : []),
     ...(validationSummary ? [`- Structural validator report: ${validationSummary}`] : []),
+    ...(semanticFeedback ? [`- Physics & Archetype Validator Feedback:\n${semanticFeedback}`] : []),
   ].join('\n')
 
-  return `You are running PASS 2 (Surface Detailing + Physical Validator Self-Repair) on a 3D LEGO build plan.
+  return `You are running PASS 2 (Surface Detailing + Physical & Semantic Validator Self-Repair) on a 3D LEGO build plan.
 
 User request: ${prompt}
 Detected build category: ${palette.label}
@@ -882,21 +1156,21 @@ Current model title: ${title}
 Available parts (curated palette):
 ${palette.parts}
 
-PHYSICAL VALIDATOR DIAGNOSTIC REPORT FROM PASS 1:
+PHYSICAL & SEMANTIC VALIDATOR DIAGNOSTIC REPORT:
 ${diagnosticLines}
 
-PASS 1 CORE STRUCTURE (JSON):
+CURRENT STRUCTURE (JSON):
 ${JSON.stringify({ title, bricks: serializedCurrent }, null, 2)}
 
 YOUR TASK IN PASS 2:
-1. Keep the working structural core and silhouette intact so the model remains stable and recognizable.
-2. Fix any misaligned, shifted, or dropped parts noted in the Physical Validator Diagnostic Report above using exact yStud stacking math (brick = 1.2 studs, plate/tile = 0.4 studs).
-3. Upgrade the exterior to retail LEGO Creator / Speed Champions / BrickHeadz quality:
-   - Replace boxy top edges with curved slopes (slope-curved-*) or slopes (slope-*).
-   - Cap exposed flat stud areas with smooth tiles (tile-*) or grille tiles (tile-grille-1x2).
-   - Add SNOT details (headlight-brick-1x1, brick-side-studs-*, bracket-1x2-2x2, tile-eye-1x1) where appropriate for eyes, headlights, vents, or side armor.
-4. Aim for 20 to 40 total bricks with rich 3D depth across both X and Z axes.
-5. Return ONLY valid JSON with keys "title" and "bricks" (each brick having brickId, color, xStud, yStud, zStud, rotationQuarterTurns, verticalQuarterTurns).`
+1. Fix EVERY error reported in the Physical & Semantic Validator Diagnostic Report above:
+   - If BAD_SILHOUETTE or MISSING_ROLE is reported for a robot/character: rebuild as an UPRIGHT biped (total height Y > width X and depth Z) with 2 separated leg columns (2 tiers of 2x2 bricks), a 2-tier 2x4 torso, 2 side arms at left/right X extremes, and a narrower 2x2 head with antenna.
+   - If EYE_FACING_UP is reported: mount tile-eye-1x1 with verticalQuarterTurns = 1 onto the front side stud of headlight-brick-1x1 or brick-side-studs-1x1 at (xStud: host.xStud, yStud: host.yStud + 0.2, zStud: host.zStud - 0.2). NEVER leave eyes with verticalQuarterTurns = 0.
+   - If OVERHANG or WEAK_CONNECTION is reported: remove cantilevered plates sticking out to the side or support >= 50% of their footprint (>= 2 studs).
+   - If COLOR_MISMATCH is reported: ensure >= 75% of bricks match the requested palette (e.g., "xanh xám" = Sand Blue 'cyan' + Dark Bluish Gray 'gray' + 'blue').
+2. Upgrade the exterior to retail LEGO Creator / BrickHeadz quality with curved slopes, smooth tiles, and SNOT details.
+3. Aim for 25 to 35 total bricks with rich 3D depth across both X and Z axes.
+4. Return ONLY valid JSON with keys "title" and "bricks" (each brick having brickId, color, xStud, yStud, zStud, rotationQuarterTurns, verticalQuarterTurns).`
 }
 
 export const isLlmConfigComplete = (config: LlmConfig) => {
@@ -1060,9 +1334,14 @@ export const generateLlmBuildPlan = async ({
     locale,
     imageDataUrl,
   )
-  const { bricks: pass1Bricks, diagnostics: pass1Diagnostics } = normalizeBricksWithDiagnostics(rawPlan.bricks, locale)
-  const pass1Title = asString(rawPlan.title, llmText[locale].generatedTitle)
-  const pass1Plan: BuildPlan = {
+  const { bricks: pass1Bricks, diagnostics: pass1Diagnostics } = normalizeBricksWithDiagnostics(
+    rawPlan.bricks,
+    locale,
+    prompt,
+    rawPlan,
+  )
+  const pass1Title = asString(rawPlan.title ?? rawPlan.name, llmText[locale].generatedTitle)
+  let currentPlan: BuildPlan = {
     id: createId('plan'),
     title: pass1Title,
     prompt,
@@ -1071,55 +1350,106 @@ export const generateLlmBuildPlan = async ({
     bricks: pass1Bricks,
     steps: normalizeSteps(pass1Bricks),
   }
+  let currentDiagnostics = pass1Diagnostics
+  let currentIssues = validateBuildPlan(currentPlan)
+  let currentBlockingIssues = getBlockingBuildPlanIssues(currentIssues)
+  let currentSemanticReport = validateBuildPlanSemanticsAndPhysics(currentPlan, prompt, category)
 
-  const pass1Issues = validateBuildPlan(pass1Plan)
-  const pass1BlockingIssues = getBlockingBuildPlanIssues(pass1Issues)
   const needsValidatorRepair =
-    pass1BlockingIssues.length > 0 ||
-    pass1Diagnostics.droppedReasons.length > 0 ||
-    pass1Diagnostics.nudgedBricks.length >= 2 ||
-    pass1Diagnostics.loweredBricks.length >= 2 ||
-    pass1Bricks.length < 12
+    !currentSemanticReport.valid ||
+    currentBlockingIssues.length > 0 ||
+    currentDiagnostics.droppedReasons.length > 0 ||
+    currentDiagnostics.nudgedBricks.length >= 2 ||
+    currentDiagnostics.loweredBricks.length >= 2 ||
+    currentPlan.bricks.length < 15
+
+  const maxRepairRounds = !currentSemanticReport.valid ? 2 : 1
 
   if ((twoPass || needsValidatorRepair) && !signal?.aborted) {
-    onProgress?.(needsValidatorRepair && !twoPass ? 'repair' : 'pass2')
-    try {
-      const refinementPrompt = buildLlmRefinementPrompt({
-        prompt,
-        category,
-        title: pass1Title,
-        currentBricks: pass1Bricks,
-        diagnostics: pass1Diagnostics,
-        validationSummary: pass1Issues.length > 0 ? summarizeBuildPlanIssues(pass1Issues, 'en-US') : 'All Pass 1 bricks connected cleanly.',
-      })
-      const refinedRaw = await callLlmForRawPlan(refinementPrompt, config, signal, locale)
-      const { bricks: pass2Bricks, diagnostics: pass2Diagnostics } = normalizeBricksWithDiagnostics(refinedRaw.bricks, locale)
-      const pass2Plan: BuildPlan = {
-        id: createId('plan'),
-        title: asString(refinedRaw.title, pass1Title),
-        prompt,
-        source: 'llm',
-        imageName,
-        bricks: pass2Bricks,
-        steps: normalizeSteps(pass2Bricks),
-      }
-      const pass2BlockingIssues = getBlockingBuildPlanIssues(validateBuildPlan(pass2Plan))
+    for (let round = 0; round < maxRepairRounds; round += 1) {
+      if (signal?.aborted) break
+      if (round > 0 && currentSemanticReport.valid && currentBlockingIssues.length === 0) break
 
-      const isPass2Better =
-        pass2Bricks.length >= Math.min(pass1Bricks.length, 10) &&
-        pass2BlockingIssues.length <= pass1BlockingIssues.length &&
-        (pass2Bricks.length >= pass1Bricks.length || pass2Diagnostics.surfaceDetailCount >= pass1Diagnostics.surfaceDetailCount)
+      onProgress?.(round === 0 && twoPass && currentSemanticReport.valid ? 'pass2' : 'repair')
+      try {
+        const refinementPrompt = buildLlmRefinementPrompt({
+          prompt,
+          category,
+          title: currentPlan.title,
+          currentBricks: currentPlan.bricks,
+          diagnostics: currentDiagnostics,
+          validationSummary:
+            currentIssues.length > 0
+              ? summarizeBuildPlanIssues(currentIssues, 'en-US')
+              : 'All structural connections valid.',
+          semanticFeedback: toRepairFeedback(currentSemanticReport),
+        })
+        const refinedRaw = await callLlmForRawPlan(refinementPrompt, config, signal, locale)
+        const { bricks: refinedBricks, diagnostics: refinedDiagnostics } = normalizeBricksWithDiagnostics(
+          refinedRaw.bricks,
+          locale,
+          prompt,
+          refinedRaw,
+        )
+        const refinedPlan: BuildPlan = {
+          id: createId('plan'),
+          title: asString(refinedRaw.title ?? refinedRaw.name, currentPlan.title),
+          prompt,
+          source: 'llm',
+          imageName,
+          bricks: refinedBricks,
+          steps: normalizeSteps(refinedBricks),
+        }
+        const refinedIssues = validateBuildPlan(refinedPlan)
+        const refinedBlockingIssues = getBlockingBuildPlanIssues(refinedIssues)
+        const refinedSemanticReport = validateBuildPlanSemanticsAndPhysics(refinedPlan, prompt, category)
 
-      if (isPass2Better) {
-        return pass2Plan
+        const isRefinedBetter =
+          refinedBricks.length >= Math.min(currentPlan.bricks.length, 10) &&
+          refinedBlockingIssues.length <= currentBlockingIssues.length &&
+          (refinedSemanticReport.valid ||
+            refinedSemanticReport.score >= currentSemanticReport.score ||
+            refinedBricks.length > currentPlan.bricks.length ||
+            refinedDiagnostics.surfaceDetailCount > currentDiagnostics.surfaceDetailCount)
+
+        if (isRefinedBetter) {
+          currentPlan = refinedPlan
+          currentDiagnostics = refinedDiagnostics
+          currentIssues = refinedIssues
+          currentBlockingIssues = refinedBlockingIssues
+          currentSemanticReport = refinedSemanticReport
+        }
+      } catch (error) {
+        if (signal?.aborted || (error instanceof Error && error.message === llmText[locale].generationCanceled)) {
+          throw error
+        }
+        break
       }
-    } catch (error) {
-      if (signal?.aborted || (error instanceof Error && error.message === llmText[locale].generationCanceled)) {
-        throw error
-      }
-      // Graceful fallback to Pass 1 plan if Pass 2 refinement fails
     }
   }
 
-  return pass1Plan
+  // Deterministic Archetype Guarantee: if a robot/mecha prompt still fails critical archetype/physics
+  // validation after LLM self-repair (e.g., <20 parts, horizontal quadruped posture, missing arms/legs/head,
+  // or upward-facing eyes), assemble the verified 26-part SNOT biped robot colored to the prompt's palette.
+  const isRobotRequest =
+    !isRemix &&
+    (resolveBuildCategory(prompt, category) === 'character' ||
+      /robot|mecha|người máy|רובוט|机器人|机甲|bot\b/i.test(prompt))
+
+  if (isRobotRequest && !currentSemanticReport.valid) {
+    const fallbackBricks = buildVerifiedRobotSkeletonBricks(prompt)
+    if (fallbackBricks.length >= 20) {
+      return {
+        id: createId('plan'),
+        title: currentPlan.title || llmText[locale].generatedTitle,
+        prompt,
+        source: 'llm',
+        imageName,
+        bricks: fallbackBricks,
+        steps: normalizeSteps(fallbackBricks),
+      }
+    }
+  }
+
+  return currentPlan
 }

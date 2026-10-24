@@ -1,5 +1,8 @@
-import type { BuildPlan, GeneratorInput } from '../types/bricks'
+import { brickById } from '../data/basicBricks'
+import type { BrickColor, BuildPlan, GeneratorInput } from '../types/bricks'
+import { resolvePromptColorPalette } from './physicsValidator'
 import { createId, createSingleBrickSteps, makeBrick } from './planUtils'
+import { PREFAB_MODULES } from './prefabModules'
 
 const assemblePlan = (
   title: string,
@@ -258,6 +261,46 @@ const robotPlan = (prompt: string, imageName?: string) => {
   return assemblePlan('机器人', prompt, bricks, imageName)
 }
 
+const creatorBipedRobotPlan = (prompt: string, imageName?: string) => {
+  const paletteRule = resolvePromptColorPalette(prompt)
+  const primary: BrickColor = paletteRule?.primaryColor ?? 'cyan'
+  const secondary: BrickColor = paletteRule?.secondaryColor ?? 'gray'
+  const accent: BrickColor = paletteRule?.accentColor ?? 'blue'
+
+  const mechaPrefab = PREFAB_MODULES.character.find((m) => m.id === 'creator-biped-mecha-core')
+  if (!mechaPrefab) return robotPlan(prompt, imageName)
+
+  const bricks = mechaPrefab.sampleBricks.map((item, idx) => {
+    const def = brickById.get(item.brickId)
+    const fallbackColor = item.color as BrickColor
+    let chosenColor: BrickColor = fallbackColor
+    if (item.brickId === 'tile-eye-1x1') {
+      chosenColor = 'white'
+    } else if (item.brickId === 'round-1x1-plate' || item.brickId === 'tile-grille-1x2') {
+      chosenColor = def?.colors.includes(accent) ? accent : fallbackColor
+    } else if (item.color === 'gray') {
+      chosenColor = def?.colors.includes(secondary) ? secondary : fallbackColor
+    } else if (item.color === 'cyan' || item.color === 'blue') {
+      chosenColor = idx % 7 === 0 && def?.colors.includes(accent)
+        ? accent
+        : def?.colors.includes(primary)
+          ? primary
+          : fallbackColor
+    }
+    const safeColor = def && def.colors.includes(chosenColor) ? chosenColor : (def?.colors[0] ?? fallbackColor)
+    return makeBrick(
+      item.brickId,
+      safeColor,
+      item.xStud,
+      item.yStud,
+      item.zStud,
+      item.rotationQuarterTurns,
+      item.verticalQuarterTurns ?? 0,
+    )
+  })
+  return assemblePlan('Robot Xanh Xám SNOT', prompt, bricks, imageName)
+}
+
 const animalPlan = (prompt: string, imageName?: string) => {
   const bricks = [
     makeBrick('plate-4x6', 'tan', 0, 0, 0),
@@ -295,7 +338,8 @@ export const generateBuildPlan = ({ prompt, imageName }: GeneratorInput): BuildP
   if (/rocket|spaceship|火箭|飞船/.test(normalized)) return rocketPlan(prompt, imageName)
   if (/flower|pot|花|花盆/.test(normalized)) return flowerPlan(prompt, imageName)
   if (/tree|plant|flower|树|植物|花/.test(normalized)) return treePlan(prompt, imageName)
-  if (/robot|mecha|机器人|机甲/.test(normalized)) return robotPlan(prompt, imageName)
+  if (/robot|mecha|người máy/.test(normalized)) return creatorBipedRobotPlan(prompt, imageName)
+  if (/机器人|机甲/.test(normalized)) return robotPlan(prompt, imageName)
   if (/duck|bird|dog|cat|animal|bear|鸭|小鸭|鸟|动物|狗|猫|熊/.test(normalized)) return animalPlan(prompt, imageName)
 
   return robotPlan(prompt || '一个基础积木模型', imageName)

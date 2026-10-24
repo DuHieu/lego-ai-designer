@@ -40,6 +40,7 @@ await writeFile(entry, `
   import { parseLDrawColorDefinitions } from ${JSON.stringify(`${workspace}/src/lib/ldrawColors.ts`)};
   import { loadLDrawGeneratedVisual } from ${JSON.stringify(`${workspace}/src/lib/ldrawGeneratedVisualLoader.ts`)};
   import { getBrickStructuralCells } from ${JSON.stringify(`${workspace}/src/lib/structuralGrid.ts`)};
+  import { validate as validateStandalonePhysics, validateBuildPlanSemanticsAndPhysics } from ${JSON.stringify(`${workspace}/src/lib/physicsValidator.ts`)};
   import {
     createCurvedSlope1x2Geometry,
     createCurvedSlope1x2OutlineGeometry,
@@ -726,6 +727,74 @@ await writeFile(entry, `
       ? 'Default finished asset piece counts changed unexpectedly: ' + JSON.stringify(changedDefaultAssetPieceCounts)
       : '',
   ].filter(Boolean);
+
+  // Validate standalone physics-validator.ts test cases (goodRobot & badDesign) + 26-part SNOT blue-gray robot
+  const standaloneGoodRobot = {
+    name: 'Chú Robot Xanh Xám',
+    archetype: 'robot',
+    palette: ['Sand Blue', 'Dark Bluish Gray', 'Light Bluish Gray'],
+    parts: [
+      { id: 'base', partNum: '3020', color: 'Dark Bluish Gray', x: 0, y: 0, z: 0, rot: 0, role: 'base' },
+      { id: 'legL1', partNum: '3003', color: 'Dark Bluish Gray', x: 0, y: 1, z: 0, rot: 0, role: 'legs' },
+      { id: 'legR1', partNum: '3003', color: 'Dark Bluish Gray', x: 2, y: 1, z: 0, rot: 0, role: 'legs' },
+      { id: 'legL2', partNum: '3003', color: 'Dark Bluish Gray', x: 0, y: 4, z: 0, rot: 0, role: 'legs' },
+      { id: 'legR2', partNum: '3003', color: 'Dark Bluish Gray', x: 2, y: 4, z: 0, rot: 0, role: 'legs' },
+      { id: 'hip', partNum: '3020', color: 'Light Bluish Gray', x: 0, y: 7, z: 0, rot: 0, role: 'torso' },
+      { id: 'torso1', partNum: '3001', color: 'Sand Blue', x: 0, y: 8, z: 0, rot: 0, role: 'torso' },
+      { id: 'torso2a', partNum: '3004', color: 'Sand Blue', x: 0, y: 11, z: 0, rot: 0, role: 'torso' },
+      { id: 'torso2b', partNum: '3004', color: 'Sand Blue', x: 2, y: 11, z: 0, rot: 0, role: 'torso' },
+      { id: 'snotL', partNum: '87087', color: 'Sand Blue', x: 0, y: 11, z: 1, rot: 270, role: 'torso' },
+      { id: 'snotR', partNum: '87087', color: 'Sand Blue', x: 3, y: 11, z: 1, rot: 90, role: 'torso' },
+      { id: 'chest', partNum: '3004', color: 'Light Bluish Gray', x: 1, y: 11, z: 1, rot: 0, role: 'torso' },
+      { id: 'armL1', partNum: '3023', color: 'Dark Bluish Gray', x: -1, y: 11, z: 0, rot: 90, orientation: '-X', attachedTo: 'snotL', role: 'arms' },
+      { id: 'armR1', partNum: '3023', color: 'Dark Bluish Gray', x: 4, y: 11, z: 0, rot: 90, orientation: '+X', attachedTo: 'snotR', role: 'arms' },
+      { id: 'handL', partNum: '3005', color: 'Light Bluish Gray', x: -1, y: 11, z: 1, rot: 0, orientation: '-X', attachedTo: 'armL1', role: 'arms' },
+      { id: 'handR', partNum: '3005', color: 'Light Bluish Gray', x: 4, y: 11, z: 1, rot: 0, orientation: '+X', attachedTo: 'armR1', role: 'arms' },
+      { id: 'shoulder', partNum: '3020', color: 'Sand Blue', x: 0, y: 14, z: 0, rot: 0, role: 'torso' },
+      { id: 'neck', partNum: '3022', color: 'Dark Bluish Gray', x: 1, y: 15, z: 0, rot: 0, role: 'head' },
+      { id: 'headBack', partNum: '3004', color: 'Sand Blue', x: 1, y: 16, z: 1, rot: 0, role: 'head' },
+      { id: 'headEyeL', partNum: '4070', color: 'Sand Blue', x: 1, y: 16, z: 0, rot: 0, role: 'head' },
+      { id: 'headEyeR', partNum: '4070', color: 'Sand Blue', x: 2, y: 16, z: 0, rot: 0, role: 'head' },
+      { id: 'eyeL', partNum: '98138', color: 'Trans-Light Blue', x: 1, y: 17, z: -1, rot: 0, orientation: '+Z', attachedTo: 'headEyeL', role: 'head' },
+      { id: 'eyeR', partNum: '98138', color: 'Trans-Light Blue', x: 2, y: 17, z: -1, rot: 0, orientation: '+Z', attachedTo: 'headEyeR', role: 'head' },
+      { id: 'headCap', partNum: '3022', color: 'Sand Blue', x: 1, y: 19, z: 0, rot: 0, role: 'head' },
+      { id: 'antBase', partNum: '4073', color: 'Light Bluish Gray', x: 1, y: 20, z: 0, rot: 0, role: 'detail' },
+      { id: 'antTip', partNum: '4073', color: 'Trans-Light Blue', x: 2, y: 20, z: 1, rot: 0, role: 'detail' },
+    ],
+  };
+  const standaloneBadDesign = {
+    name: 'Bad Robot (crocodile)',
+    archetype: 'robot',
+    palette: ['Sand Blue', 'Dark Bluish Gray'],
+    parts: [
+      { id: 'p1', partNum: '3001', color: 'Blue', x: 0, y: 0, z: 0, rot: 0, role: 'torso' },
+      { id: 'p2', partNum: '3001', color: 'Blue', x: 4, y: 0, z: 0, rot: 0, role: 'torso' },
+      { id: 'p3', partNum: '3020', color: 'Blue', x: -3, y: 3, z: 0, rot: 0, role: 'detail' },
+      { id: 'eye1', partNum: '4073', color: 'White', x: 5, y: 3, z: 0, rot: 0, orientation: 'up', role: 'head' },
+      { id: 'eye2', partNum: '4073', color: 'White', x: 5, y: 3, z: 1, rot: 0, orientation: 'up', role: 'head' },
+      { id: 'float', partNum: '3004', color: 'Red', x: 0, y: 10, z: 0, rot: 0, role: 'detail' },
+    ],
+  };
+  const goodRobotReport = validateStandalonePhysics(standaloneGoodRobot);
+  const badDesignReport = validateStandalonePhysics(standaloneBadDesign);
+  const blueGrayRobotPlan = generateBuildPlan({ prompt: 'chú robot màu xanh xám' });
+  const blueGrayRobotIssues = validateBuildPlan(blueGrayRobotPlan);
+  const blueGrayRobotBlocking = getBlockingBuildPlanIssues(blueGrayRobotIssues);
+  const blueGrayRobotSemantic = validateBuildPlanSemanticsAndPhysics(blueGrayRobotPlan, 'chú robot màu xanh xám', 'character');
+
+  if (!goodRobotReport.valid || goodRobotReport.score !== 100) {
+    regressionFailures.push('Standalone goodRobot should pass with score 100: ' + JSON.stringify(goodRobotReport));
+  }
+  if (badDesignReport.valid || !badDesignReport.issues.some((i) => i.code === 'OVERHANG') || !badDesignReport.issues.some((i) => i.code === 'EYE_FACING_UP')) {
+    regressionFailures.push('Standalone badDesign should fail with OVERHANG and EYE_FACING_UP: ' + JSON.stringify(badDesignReport));
+  }
+  if (blueGrayRobotPlan.bricks.length < 20 || blueGrayRobotBlocking.length > 0 || !blueGrayRobotSemantic.valid) {
+    regressionFailures.push('chú robot màu xanh xám plan must have >=20 parts, 0 blocking issues, and valid semantics: ' + JSON.stringify({
+      pieces: blueGrayRobotPlan.bricks.length,
+      blocking: blueGrayRobotBlocking,
+      semantic: blueGrayRobotSemantic,
+    }));
+  }
 
   const failures = results.filter((result) =>
     result.planBlockingIssues.length > 0 ||
