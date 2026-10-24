@@ -2,7 +2,7 @@ import { brickById, brickDefinitions } from '../data/basicBricks'
 import type { BrickColor, BuildPlan, GeneratorInput, LlmConfig, PlacedBrick } from '../types/bricks'
 import { generateBuildPlan } from './localGenerator'
 import { PLATE_HEIGHT_WORLD, WORLD_EDIT_STEP_STUDS, normalizeHorizontalStud, normalizeYStud, plateHeightToWorldStud } from './brickUnits'
-import { createId, createSingleBrickSteps, findSupportedOpenPose, hasBrickCollision, isBrickSupported, makeBrick } from './planUtils'
+import { createId, createSingleBrickSteps, hasBrickCollision, isBrickSupported, makeBrick } from './planUtils'
 import { AI_PROVIDERS, detectProviderFromEndpoint } from './aiProviders'
 
 type LlmBrick = {
@@ -195,11 +195,11 @@ const inventorySummary = brickDefinitions
   .filter((brick) => brick.pack === 'lego')
   .map(
     (brick) =>
-      `${brick.id}: ${brick.name}, footprint ${brick.footprint.widthStuds}x${brick.footprint.depthStuds}, height ${formatLegoHeightForPrompt(brick.footprint.heightStuds)} plates, colors ${brick.colors.join('/')}, inventory ${formatInventoryForPrompt(brick.inventory)}`,
+      `${brick.id}: ${brick.name}, footprint ${brick.footprint.widthStuds}x${brick.footprint.depthStuds}, height ${brick.footprint.heightStuds} studs (${formatLegoHeightForPrompt(brick.footprint.heightStuds)} plates), colors ${brick.colors.join('/')}, inventory ${formatInventoryForPrompt(brick.inventory)}`,
   )
   .join('\n')
 
-export const llmSystemPrompt = 'You are a brick build-planning engine. Return compact valid JSON only. Do not include reasoning.'
+export const llmSystemPrompt = 'You are a professional 3D LEGO master builder and algorithmic build-planning engine. Return compact valid JSON only. Do not include reasoning.'
 
 const formatOfficialReplicaExample = () => {
   const plan = generateBuildPlan({ prompt: '一个 Classic 小幽灵' })
@@ -219,13 +219,55 @@ const formatOfficialReplicaExample = () => {
   return JSON.stringify(example, null, 2)
 }
 
-export const buildLlmUserPrompt = ({ prompt, imageName }: GeneratorInput) => `You generate small brick build plans for a browser 3D editor.
+export const buildLlmUserPrompt = ({ prompt, imageName }: GeneratorInput) => `You generate recognizable, structurally sound 3D LEGO brick build plans for a browser 3D editor.
 
 User request: ${prompt}
 Reference image file name: ${imageName || 'none'}
 
 Available parts:
 ${inventorySummary}
+
+CRITICAL HEIGHT & STACKING MATH:
+- Standard Bricks (brick-*): Height = 1.2 studs (3 plates)
+- Plates (plate-*) & Tiles (tile-*): Height = 0.4 studs (1 plate)
+- Slopes (slope-*): Height = 1.2 studs (3 plates)
+- Stacking formula: When placing piece B on piece A: yStud(B) = yStud(A) + height(A)
+- Common vertical elevations:
+  * Level 0 (ground): y = 0
+  * Level 1 (after 1 plate): y = 0.4
+  * Level 2 (after 2 plates or 1 brick): y = 0.8 or 1.2
+  * Level 3 (after 1 brick + 1 plate): y = 1.6
+  * Level 4 (after 2 bricks): y = 2.4
+  * Level 5 (after 2 bricks + 1 plate): y = 2.8
+  * Level 6 (after 3 bricks): y = 3.6
+  * Level 7 (after 3 bricks + 1 plate): y = 4.0
+  * Level 8 (after 4 bricks): y = 4.8
+
+MULTILINGUAL COLOR INTERPRETATION & PALETTE:
+- Understand user language (e.g. Vietnamese):
+  * "xanh" / "xanh dương" = blue, "xanh ngọc" / "cyan" = cyan, "xanh lá" = green
+  * "xám" = gray, "vàng" = yellow, "đỏ" = red, "đen" = black, "trắng" = white, "cam" = orange
+- TWO-TONE COLOR HARMONY: If the user requests two colors (e.g. "xanh xám" -> blue & gray), distribute both colors across the model!
+  * Primary color (e.g. blue) for main armor / torso / head.
+  * Secondary color (e.g. gray or black) for base / limbs / joints.
+  * Eyes: tile-eye-1x1 (color: white).
+
+BUILD DESIGN & ANATOMY RULES:
+- Use 1 to ${maxLlmBricks} bricks. Aim for 18 to 35 bricks for a detailed, recognizable build with distinct body parts.
+- For character / creature / robot models:
+  * Base/Feet: Stable footing at y=0 (e.g. left foot at x=1, right foot at x=4, or a base plate like plate-4x6).
+  * Legs: Rising columns.
+  * Waist/Pelvis: A spanning piece locking legs together.
+  * Torso: Main central body block.
+  * Arms: Extended on left and right sides.
+  * Head & Face: Centered on top with tile-eye-1x1 on front.
+  * Antenna / Ears / Details on crown.
+- Coordinates: xStud, yStud, zStud in 0.1 increments. Keep within x=0..8, z=0..6.
+- Every brick item MUST strictly have keys:
+  "brickId", "color", "xStud", "yStud", "zStud", "rotationQuarterTurns", "verticalQuarterTurns"
+- Output the title in English, even if the user request is not English.
+- Use only available brick ids and their allowed colors.
+- Do not include markdown or explanatory text.
 
 Return only valid JSON with this exact shape:
 {
@@ -242,22 +284,6 @@ Return only valid JSON with this exact shape:
     }
   ]
 }
-
-Rules:
-- Use 1 to ${maxLlmBricks} bricks.
-- Output the title in English, even if the user request is not English.
-- Coordinates use one world unit: xStud, yStud, and zStud are all measured in studs and may use 0.1 increments. One plate is 0.4 studs tall.
-- yStud must be 0 or higher.
-- rotationQuarterTurns is horizontal rotation and must be 0, 1, 2, or 3.
-- verticalQuarterTurns is vertical rotation and must be 0, 1, 2, or 3. Use it when a part must stand on its side, such as a tile attached to a side stud.
-- Keep the model compact, usually inside x=0..8 and z=0..6.
-- Most raised bricks should sit directly on another brick: yStud should equal the lower brick top height, and their x/z footprints should overlap.
-- Side-mounted parts may be supported by aligned side connectors instead of vertical footprint overlap.
-- Avoid overlapping bricks. Never place disconnected decorative islands far away from the main object.
-- The final model must be one connected structure through vertical stud support or connector alignment. Do not place separate ground-level islands unless they are connected by a shared base plate.
-- Wheel and axle pieces are currently disabled, so do not build wheeled vehicles. Prefer static models such as houses, trees, bridges, benches, castles, flowers, rockets, animals, or robots.
-- Use only available brick ids and their listed colors.
-- Do not include markdown or explanatory text.
 
 Good official-replica example, calibrated from LEGO Classic 10696 Ghost:
 ${formatOfficialReplicaExample()}`
@@ -643,15 +669,6 @@ const normalizeBricks = (rawBricks: unknown, locale: LlmLocale): PlacedBrick[] =
     const supportedBrick = lowerUntilSupported(openBrick, placed)
     if (!supportedBrick) continue
 
-    if (placed.length > 0 && supportedBrick.pose.yStud === 0) {
-      const supportedOpenBrick = findSupportedOpenPose(supportedBrick, placed)
-      if (supportedOpenBrick.pose.yStud > 0 && isBrickSupported(supportedOpenBrick, placed)) {
-        placed.push(normalizeBrickPose(supportedOpenBrick))
-        placedCounts.set(brickId, currentCount + 1)
-      }
-      continue
-    }
-
     placed.push(normalizeBrickPose(supportedBrick))
     placedCounts.set(brickId, currentCount + 1)
   }
@@ -714,9 +731,10 @@ export const testLlmConnection = async (config: LlmConfig, locale: LlmLocale = '
   }
 
   const responseText = await response.text()
-  if (!responseText.trim()) throw new Error(llmText[locale].emptyConfigResponse)
+  const cleanedText = responseText.replace(/data:\s*\[DONE\]\s*$/, '').trim()
+  if (!cleanedText) throw new Error(llmText[locale].emptyConfigResponse)
 
-  const payload = JSON.parse(responseText) as unknown
+  const payload = JSON.parse(cleanedText) as unknown
   const content = extractMessageContent(payload)
   if (!content) throw new Error(formatEmptyContentError(payload, llmText[locale].configTestContext, locale))
 }
@@ -764,9 +782,10 @@ export const generateLlmBuildPlan = async ({ prompt, imageName, config, signal, 
   }
 
   const responseText = await response.text()
-  if (!responseText.trim()) throw new Error(llmText[locale].emptyGenerationResponse)
+  const cleanedText = responseText.replace(/data:\s*\[DONE\]\s*$/, '').trim()
+  if (!cleanedText) throw new Error(llmText[locale].emptyGenerationResponse)
 
-  const payload = JSON.parse(responseText) as unknown
+  const payload = JSON.parse(cleanedText) as unknown
   const content = extractMessageContent(payload)
   if (!content) throw new Error(formatEmptyContentError(payload, llmText[locale].responseContext, locale))
 
