@@ -7,7 +7,7 @@ import { ControlPanel } from './components/ControlPanel'
 import { brickById, brickDefinitions } from './data/basicBricks'
 import { generateBuildPlan } from './lib/localGenerator'
 import { buildLlmUserPrompt, generateLlmBuildPlan, isLlmConfigComplete, llmSystemPrompt, testLlmConnection, type LlmGenerationStage } from './lib/llmGenerator'
-import { formatBricklinkWantedListXml } from './lib/bricklinkExport'
+import { calculateModelPhysicalSpecs, formatBricklinkWantedListXml } from './lib/bricklinkExport'
 import { loadLlmConfig, saveLlmConfig } from './lib/llmConfig'
 import { defaultFinishedAssets, isDefaultFinishedAsset, loadFinishedAssets, saveFinishedAssets } from './lib/finishedAssets'
 import { formatBuildManualHtml, formatBuildManualLDraw, formatBuildManualMarkdown, serializeBuildManual } from './lib/manualSerializer'
@@ -261,6 +261,7 @@ function App() {
   const [isManualOpen, setIsManualOpen] = useState(false)
   const [manualPlan, setManualPlan] = useState<BuildPlan>()
   const [manualStepIndex, setManualStepIndex] = useState(0)
+  const [isSmartLayerManual, setIsSmartLayerManual] = useState(true)
   const [manualCopyStatus, setManualCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [promptCopyStatus, setPromptCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [finishedAssets, setFinishedAssets] = useState<FinishedAsset[]>(() => loadFinishedAssets())
@@ -403,7 +404,14 @@ function App() {
     [brickCounts],
   )
   const manualSourcePlan = isManualOpen ? manualPlan ?? plan : undefined
-  const buildManual = useMemo(() => manualSourcePlan ? serializeBuildManual(manualSourcePlan, locale) : undefined, [locale, manualSourcePlan])
+  const buildManual = useMemo(
+    () => manualSourcePlan ? serializeBuildManual(manualSourcePlan, locale, { groupByLayer: isSmartLayerManual }) : undefined,
+    [isSmartLayerManual, locale, manualSourcePlan],
+  )
+  const manualPhysicalSpecs = useMemo(
+    () => manualSourcePlan ? calculateModelPhysicalSpecs(manualSourcePlan.bricks) : undefined,
+    [manualSourcePlan],
+  )
   const manualMarkdown = useMemo(() => buildManual ? formatBuildManualMarkdown(buildManual, locale) : '', [buildManual, locale])
   const manualIssues = useMemo(() => manualSourcePlan ? validateBuildPlan(manualSourcePlan) : [], [manualSourcePlan])
   const manualBlockingIssues = useMemo(() => getBlockingBuildPlanIssues(manualIssues), [manualIssues])
@@ -556,7 +564,26 @@ function App() {
     if (!file) return
     setImageName(file.name)
     const reader = new FileReader()
-    reader.onload = () => setImagePreview(String(reader.result))
+    reader.onload = () => {
+      const rawDataUrl = String(reader.result)
+      const img = new Image()
+      img.onload = () => {
+        const maxDim = 512
+        const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(img.width * scale))
+        canvas.height = Math.max(1, Math.round(img.height * scale))
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          setImagePreview(canvas.toDataURL('image/jpeg', 0.82))
+        } else {
+          setImagePreview(rawDataUrl)
+        }
+      }
+      img.onerror = () => setImagePreview(rawDataUrl)
+      img.src = rawDataUrl
+    }
     reader.readAsDataURL(file)
   }
 
@@ -606,12 +633,14 @@ function App() {
     clearGenerationFeedback()
   }
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (options?: { remix?: boolean }) => {
     const input = {
       prompt: prompt.trim() || fallbackPrompt,
       imageName,
+      imageDataUrl: imagePreview,
       category: buildCategory,
       twoPass: isTwoPassEnabled,
+      remixPlan: options?.remix ? plan : undefined,
     }
 
     clearGenerationFeedback()
@@ -623,7 +652,7 @@ function App() {
     }
 
     setIsGenerating(true)
-    setGenerationStage('pass1')
+    setGenerationStage(options?.remix ? 'remix' : 'pass1')
     const generationController = new AbortController()
     generationAbortRef.current = generationController
 
@@ -1384,7 +1413,8 @@ function App() {
         imagePreview={imagePreview}
         imageName={imageName}
         onImage={handleImage}
-        onGenerate={handleGenerate}
+        onGenerate={() => handleGenerate()}
+        onRemix={() => handleGenerate({ remix: true })}
         onCancelGenerate={cancelGenerate}
         onOpenPromptPreview={() => {
           setPromptCopyStatus('idle')
@@ -1794,7 +1824,41 @@ function App() {
             </header>
 
             <section className="manual-inventory">
-              <h3>{t('manual.inventory')}</h3>
+              <div className="manual-inventory-header">
+                <h3>{t('manual.inventory')}</h3>
+                <label className="generator-checkbox-field compact-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={isSmartLayerManual}
+                    onChange={(event) => {
+                      setIsSmartLayerManual(event.target.checked)
+                      setManualStepIndex(0)
+                    }}
+                  />
+                  <span>{t('manual.smartLayerToggle')}</span>
+                </label>
+              </div>
+              {manualPhysicalSpecs && (
+                <div className="physical-specs-card manual-specs-card">
+                  <small>
+                    {t('specs.dimensions', {
+                      w: manualPhysicalSpecs.widthStuds,
+                      d: manualPhysicalSpecs.depthStuds,
+                      h: manualPhysicalSpecs.heightStuds,
+                      wMm: manualPhysicalSpecs.widthMm,
+                      dMm: manualPhysicalSpecs.depthMm,
+                      hMm: manualPhysicalSpecs.heightMm,
+                    })}
+                  </small>
+                  <small>
+                    {t('specs.budget', {
+                      weight: manualPhysicalSpecs.weightGrams,
+                      usd: manualPhysicalSpecs.estimatedUsd,
+                      vnd: manualPhysicalSpecs.estimatedVnd.toLocaleString(),
+                    })}
+                  </small>
+                </div>
+              )}
               <p className={`structure-status ${manualIssues.length > 0 ? (manualBlockingIssues.length > 0 ? 'warn' : 'notice') : 'ok'}`}>
                 {manualIssues.length > 0 ? manualIssueSummary : t('common.structureOk')}
               </p>

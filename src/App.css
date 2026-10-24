@@ -1115,6 +1115,52 @@ button:disabled {
   accent-color: var(--ink);
 }
 
+.compact-checkbox {
+  padding: 5px 9px;
+}
+
+.remix-button {
+  width: 100%;
+  margin-top: 6px;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.remix-button:hover {
+  background: #dbeafe;
+}
+
+.physical-specs-card {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 9px 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.physical-specs-card small {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.manual-inventory-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.manual-specs-card {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 14px;
+}
+
 .upload-row {
   display: grid;
   grid-template-columns: 1fr 56px;

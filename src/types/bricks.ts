@@ -144,6 +144,8 @@ export type BuildCategoryOption = 'auto' | 'vehicle' | 'character' | 'creature' 
 export type GeneratorInput = {
   prompt: string
   imageName?: string
+  imageDataUrl?: string
   category?: BuildCategoryOption
   twoPass?: boolean
+  remixPlan?: BuildPlan
 }

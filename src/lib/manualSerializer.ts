@@ -285,22 +285,90 @@ const sequenceBricksForManual = (plan: BuildPlan, locale: ManualLocale) => {
   return ordered
 }
 
-export const serializeBuildManual = (plan: BuildPlan, locale: ManualLocale = 'zh-CN'): BuildManual => {
+export type SerializeManualOptions = {
+  groupByLayer?: boolean
+}
+
+const formatGroupStepTitle = (pieces: ManualPiece[], locale: ManualLocale, singleFallback: (name: string) => string) => {
+  if (pieces.length === 1) return singleFallback(pieces[0].name)
+  const y = pieces[0].pose.yStud
+  const uniqueNames = [...new Set(pieces.map((p) => p.name))].slice(0, 2).join(', ')
+  if (locale === 'vi-VN') {
+    return y === 0
+      ? `Nền móng (y=0) · Lắp ${pieces.length} chi tiết (${uniqueNames})`
+      : `Tầng y=${y} · Lắp cụm ${pieces.length} chi tiết (${uniqueNames})`
+  }
+  if (locale === 'en-US') {
+    return y === 0
+      ? `Foundation (y=0) · Place ${pieces.length} parts (${uniqueNames})`
+      : `Layer y=${y} · Place ${pieces.length} parts (${uniqueNames})`
+  }
+  return y === 0
+    ? `底层基础 (y=0) · 放置 ${pieces.length} 个零件 (${uniqueNames})`
+    : `层高 y=${y} · 放置 ${pieces.length} 个零件 (${uniqueNames})`
+}
+
+const formatGroupStepDescription = (
+  pieces: ManualPiece[],
+  stepIndex: number,
+  locale: ManualLocale,
+  singleFallback: (index: number, name: string) => string,
+) => {
+  if (pieces.length === 1) return singleFallback(stepIndex, pieces[0].name)
+  const summary = pieces.map((p) => `${p.name} (${p.color})`).join(' + ')
+  if (locale === 'vi-VN') {
+    return `Bước ${stepIndex + 1} (Cụm ${pieces.length} mảnh cùng tầng y=${pieces[0].pose.yStud}): ${summary}.`
+  }
+  if (locale === 'en-US') {
+    return `Step ${stepIndex + 1} (${pieces.length}-part sub-assembly at y=${pieces[0].pose.yStud}): ${summary}.`
+  }
+  return `第 ${stepIndex + 1} 步（同层 y=${pieces[0].pose.yStud} 共 ${pieces.length} 个零件）：${summary}。`
+}
+
+export const serializeBuildManual = (
+  plan: BuildPlan,
+  locale: ManualLocale = 'zh-CN',
+  options?: SerializeManualOptions,
+): BuildManual => {
   const labels = manualText[locale]
   const cumulativePieceIds = new Set<string>()
   const cumulativePieces: ManualPiece[] = []
+  const sequenced = sequenceBricksForManual(plan, locale)
 
-  const steps: ManualStepPage[] = sequenceBricksForManual(plan, locale).map(({ brick, validation }, index) => {
-    const piece = toManualPiece(brick)
-    const addPieces = [piece]
+  const groupedSequenced: Array<Array<(typeof sequenced)[number]>> = []
+  if (options?.groupByLayer) {
+    for (const item of sequenced) {
+      const lastGroup = groupedSequenced[groupedSequenced.length - 1]
+      if (
+        lastGroup &&
+        lastGroup.length < 4 &&
+        Math.abs(lastGroup[0].brick.pose.yStud - item.brick.pose.yStud) < 0.05 &&
+        lastGroup[lastGroup.length - 1].validation.ok === item.validation.ok
+      ) {
+        lastGroup.push(item)
+      } else {
+        groupedSequenced.push([item])
+      }
+    }
+  } else {
+    for (const item of sequenced) {
+      groupedSequenced.push([item])
+    }
+  }
 
-    cumulativePieceIds.add(piece.instanceId)
-    cumulativePieces.push(piece)
+  const steps: ManualStepPage[] = groupedSequenced.map((group, index) => {
+    const addPieces = group.map(({ brick }) => toManualPiece(brick))
+    const validation = group[group.length - 1].validation
+
+    for (const piece of addPieces) {
+      cumulativePieceIds.add(piece.instanceId)
+      cumulativePieces.push(piece)
+    }
 
     return {
       stepNumber: index + 1,
-      title: labels.placeTitle(piece.name),
-      description: labels.placeDescription(index, piece.name),
+      title: formatGroupStepTitle(addPieces, locale, labels.placeTitle),
+      description: formatGroupStepDescription(addPieces, index, locale, labels.placeDescription),
       addPieces,
       stepInventory: countPieces(addPieces),
       cumulativePieceIds: [...cumulativePieceIds],

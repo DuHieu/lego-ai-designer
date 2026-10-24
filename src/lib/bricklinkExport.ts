@@ -1,5 +1,6 @@
 import { brickById } from '../data/basicBricks'
 import type { BrickColor, PlacedBrick } from '../types/bricks'
+import { PLATE_HEIGHT_WORLD, footprintToWorld } from './brickUnits'
 
 /**
  * BrickLink Wanted List export.
@@ -85,4 +86,115 @@ export const formatBricklinkWantedListXml = (bricks: PlacedBrick[], remarks?: st
   ].join('\n'))
 
   return ['<INVENTORY>', ...items, '</INVENTORY>', ''].join('\n')
+}
+
+export type ModelPhysicalSpecs = {
+  widthStuds: number
+  depthStuds: number
+  heightStuds: number
+  heightPlates: number
+  widthMm: number
+  depthMm: number
+  heightMm: number
+  weightGrams: number
+  estimatedUsd: number
+  estimatedVnd: number
+  distinctLots: number
+  breakdown: {
+    bricks: number
+    plates: number
+    slopes: number
+    tiles: number
+    snot: number
+  }
+}
+
+export const calculateModelPhysicalSpecs = (bricks: PlacedBrick[]): ModelPhysicalSpecs => {
+  if (bricks.length === 0) {
+    return {
+      widthStuds: 0,
+      depthStuds: 0,
+      heightStuds: 0,
+      heightPlates: 0,
+      widthMm: 0,
+      depthMm: 0,
+      heightMm: 0,
+      weightGrams: 0,
+      estimatedUsd: 0,
+      estimatedVnd: 0,
+      distinctLots: 0,
+      breakdown: { bricks: 0, plates: 0, slopes: 0, tiles: 0, snot: 0 },
+    }
+  }
+
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  let minZ = Number.POSITIVE_INFINITY
+  let maxZ = Number.NEGATIVE_INFINITY
+
+  let weightGrams = 0
+  let estimatedUsd = 0
+  const breakdown = { bricks: 0, plates: 0, slopes: 0, tiles: 0, snot: 0 }
+
+  for (const brick of bricks) {
+    const def = brickById.get(brick.brickId)
+    if (!def) continue
+
+    const fp = footprintToWorld(def, brick.pose.rotationQuarterTurns, brick.pose.verticalQuarterTurns ?? 0)
+    minX = Math.min(minX, brick.pose.xStud)
+    maxX = Math.max(maxX, brick.pose.xStud + fp.width)
+    minY = Math.min(minY, brick.pose.yStud)
+    maxY = Math.max(maxY, brick.pose.yStud + fp.height)
+    minZ = Math.min(minZ, brick.pose.zStud)
+    maxZ = Math.max(maxZ, brick.pose.zStud + fp.depth)
+
+    const studArea = def.footprint.widthStuds * def.footprint.depthStuds
+    const platesTall = def.footprint.heightStuds / PLATE_HEIGHT_WORLD
+    weightGrams += studArea * platesTall * 0.14
+
+    const isSnot =
+      brick.brickId.includes('side-studs') ||
+      brick.brickId.includes('headlight') ||
+      brick.brickId.includes('bracket')
+
+    if (isSnot) {
+      breakdown.snot += 1
+      estimatedUsd += 0.12 + studArea * 0.02
+    } else if (def.kind === 'slope') {
+      breakdown.slopes += 1
+      estimatedUsd += 0.09 + studArea * 0.018
+    } else if (def.kind === 'tile') {
+      breakdown.tiles += 1
+      estimatedUsd += 0.07 + studArea * 0.015
+    } else if (def.kind === 'plate') {
+      breakdown.plates += 1
+      estimatedUsd += 0.06 + studArea * 0.014
+    } else {
+      breakdown.bricks += 1
+      estimatedUsd += 0.08 + studArea * 0.018
+    }
+  }
+
+  const widthStuds = Number(Math.max(0, maxX - minX).toFixed(1))
+  const depthStuds = Number(Math.max(0, maxZ - minZ).toFixed(1))
+  const heightStuds = Number(Math.max(0, maxY - minY).toFixed(1))
+  const heightPlates = Number((heightStuds / PLATE_HEIGHT_WORLD).toFixed(1))
+  const wantedLots = buildWantedList(bricks).length
+
+  return {
+    widthStuds,
+    depthStuds,
+    heightStuds,
+    heightPlates,
+    widthMm: Number((widthStuds * 8).toFixed(1)),
+    depthMm: Number((depthStuds * 8).toFixed(1)),
+    heightMm: Number((heightPlates * 3.2).toFixed(1)),
+    weightGrams: Number(Math.max(1, weightGrams).toFixed(1)),
+    estimatedUsd: Number(estimatedUsd.toFixed(2)),
+    estimatedVnd: Math.round((estimatedUsd * 25500) / 1000) * 1000,
+    distinctLots: wantedLots,
+    breakdown,
+  }
 }

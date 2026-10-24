@@ -31,7 +31,7 @@ type LlmPlan = {
   bricks?: unknown
 }
 
-export type LlmGenerationStage = 'pass1' | 'pass2' | 'repair'
+export type LlmGenerationStage = 'pass1' | 'pass2' | 'repair' | 'remix'
 
 type LlmGenerateInput = GeneratorInput & {
   config: LlmConfig
@@ -765,7 +765,72 @@ const normalizeBricksWithDiagnostics = (
   }
 }
 
-const normalizeSteps = (bricks: PlacedBrick[]) => createSingleBrickSteps(bricks)
+const normalizeSteps = (bricks: PlacedBrick[]) => {
+  if (bricks.length === 0) return createSingleBrickSteps(bricks)
+  const sorted = [...bricks].sort(
+    (a, b) => a.pose.yStud - b.pose.yStud || a.pose.zStud - b.pose.zStud || a.pose.xStud - b.pose.xStud,
+  )
+  const groups: PlacedBrick[][] = []
+  for (const brick of sorted) {
+    const last = groups[groups.length - 1]
+    if (last && last.length < 4 && Math.abs(last[0].pose.yStud - brick.pose.yStud) < 0.05) {
+      last.push(brick)
+    } else {
+      groups.push([brick])
+    }
+  }
+  return groups.map((group, idx) => {
+    const names = [...new Set(group.map((b) => brickById.get(b.brickId)?.name ?? b.brickId))].slice(0, 2).join(', ')
+    return {
+      id: createId(`step-${idx + 1}`),
+      title: group.length === 1 ? `Place ${names}` : `Layer y=${group[0].pose.yStud} (${group.length} parts: ${names})`,
+      description: `Assemble ${group.length} part(s) at elevation y=${group[0].pose.yStud}.`,
+      brickIds: group.map((b) => b.id),
+    }
+  })
+}
+
+const buildLlmRemixPrompt = ({
+  prompt,
+  category,
+  remixPlan,
+}: {
+  prompt: string
+  category?: BuildCategoryOption
+  remixPlan: BuildPlan
+}) => {
+  const palette = formatPaletteForPrompt(`${remixPlan.title} ${prompt}`, category)
+  const serializedCurrent = remixPlan.bricks.map((brick) => ({
+    brickId: brick.brickId,
+    color: brick.color,
+    xStud: brick.pose.xStud,
+    yStud: brick.pose.yStud,
+    zStud: brick.pose.zStud,
+    rotationQuarterTurns: brick.pose.rotationQuarterTurns,
+    verticalQuarterTurns: brick.pose.verticalQuarterTurns ?? 0,
+  }))
+
+  return `You are an interactive 3D LEGO Co-Pilot modifying an existing LEGO model on the user's workbench.
+
+Current model title: ${remixPlan.title}
+Original prompt: ${remixPlan.prompt}
+User modification / remix instruction: ${prompt}
+Detected build category: ${palette.label}
+
+Available parts (curated palette):
+${palette.parts}
+
+CURRENT 3D MODEL ON WORKBENCH (${remixPlan.bricks.length} bricks):
+${JSON.stringify({ title: remixPlan.title, bricks: serializedCurrent }, null, 2)}
+
+YOUR REMIX TASK:
+1. Preserve the existing parts and coordinates that do NOT need to change.
+2. Apply the user's modification request ("${prompt}") accurately:
+   - If the user asks to add features (wings, spoiler, hat, weapons, roof, extra floor, SNOT eyes/lights), attach them cleanly to the existing structure using exact yStud stacking math (brick = 1.2 studs, plate/tile = 0.4 studs).
+   - If the user asks to recolor or reshape sections, update those bricks accordingly.
+3. Ensure every brick has valid support and no collisions, using curved slopes, tiles, and SNOT parts for a retail LEGO Creator finish.
+4. Return ONLY valid JSON with keys "title" and "bricks" (1 to ${maxLlmBricks} bricks).`
+}
 
 const buildLlmRefinementPrompt = ({
   prompt,
@@ -899,40 +964,58 @@ const callLlmForRawPlan = async (
   config: LlmConfig,
   signal: AbortSignal | undefined,
   locale: LlmLocale,
+  imageDataUrl?: string,
 ): Promise<LlmPlan> => {
-  const controller = new AbortController()
-  const abortFromCaller = () => controller.abort()
-  signal?.addEventListener('abort', abortFromCaller)
-  const timeout = globalThis.setTimeout(() => controller.abort(), clientRequestTimeoutMs)
-  let response: Response
+  const sendRequest = async (useVision: boolean) => {
+    const controller = new AbortController()
+    const abortFromCaller = () => controller.abort()
+    signal?.addEventListener('abort', abortFromCaller)
+    const timeout = globalThis.setTimeout(() => controller.abort(), clientRequestTimeoutMs)
 
-  try {
-    response = await requestLlmChat(config, applyThinkingMode({
-      model: config.modelName.trim(),
-      messages: [
-        {
-          role: 'system',
-          content: llmSystemPrompt,
-        },
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-      temperature: 0.2,
-      max_tokens: config.enableThinking ? generationThinkingMaxTokens : generationMaxTokens,
-      stream: false,
-      response_format: { type: 'json_object' },
-    }, config.enableThinking, config), controller.signal)
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      if (signal?.aborted) throw new Error(llmText[locale].generationCanceled)
-      throw new Error(llmText[locale].generationTimeout)
+    const userContent =
+      useVision && imageDataUrl && imageDataUrl.startsWith('data:image/')
+        ? [
+            { type: 'text', text: userPrompt },
+            { type: 'image_url', image_url: { url: imageDataUrl, detail: 'low' } },
+          ]
+        : userPrompt
+
+    try {
+      return await requestLlmChat(config, applyThinkingMode({
+        model: config.modelName.trim(),
+        messages: [
+          {
+            role: 'system',
+            content: llmSystemPrompt,
+          },
+          {
+            role: 'user',
+            content: userContent,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: config.enableThinking ? generationThinkingMaxTokens : generationMaxTokens,
+        stream: false,
+        response_format: { type: 'json_object' },
+      }, config.enableThinking, config), controller.signal)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        if (signal?.aborted) throw new Error(llmText[locale].generationCanceled)
+        throw new Error(llmText[locale].generationTimeout)
+      }
+      throw formatFetchError(error, config.requestMode, locale)
+    } finally {
+      signal?.removeEventListener('abort', abortFromCaller)
+      globalThis.clearTimeout(timeout)
     }
-    throw formatFetchError(error, config.requestMode, locale)
-  } finally {
-    signal?.removeEventListener('abort', abortFromCaller)
-    globalThis.clearTimeout(timeout)
+  }
+
+  const hasVisionPayload = Boolean(imageDataUrl && imageDataUrl.startsWith('data:image/'))
+  let response = await sendRequest(hasVisionPayload)
+
+  if (!response.ok && hasVisionPayload && !signal?.aborted) {
+    // Fallback to text-only prompt if the selected model does not accept multimodal image_url
+    response = await sendRequest(false)
   }
 
   if (!response.ok) {
@@ -953,8 +1036,10 @@ const callLlmForRawPlan = async (
 export const generateLlmBuildPlan = async ({
   prompt,
   imageName,
+  imageDataUrl,
   category,
   twoPass = true,
+  remixPlan,
   config,
   signal,
   locale = 'zh-CN',
@@ -962,12 +1047,18 @@ export const generateLlmBuildPlan = async ({
 }: LlmGenerateInput): Promise<BuildPlan> => {
   if (!isLlmConfigComplete(config)) throw new Error(llmText[locale].incompleteConfig)
 
-  onProgress?.('pass1')
+  const isRemix = Boolean(remixPlan && remixPlan.bricks.length > 0)
+  onProgress?.(isRemix ? 'remix' : 'pass1')
+  const initialPrompt = isRemix && remixPlan
+    ? buildLlmRemixPrompt({ prompt, category, remixPlan })
+    : buildLlmUserPrompt({ prompt, imageName, category })
+
   const rawPlan = await callLlmForRawPlan(
-    buildLlmUserPrompt({ prompt, imageName, category }),
+    initialPrompt,
     config,
     signal,
     locale,
+    imageDataUrl,
   )
   const { bricks: pass1Bricks, diagnostics: pass1Diagnostics } = normalizeBricksWithDiagnostics(rawPlan.bricks, locale)
   const pass1Title = asString(rawPlan.title, llmText[locale].generatedTitle)

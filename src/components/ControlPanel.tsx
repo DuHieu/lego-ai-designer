@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { BookOpen, Box, Download, ImageUp, Plus, Sparkles, Trash2, Upload } from 'lucide-react'
+import { BookOpen, Box, Download, ImageUp, Plus, Sparkles, Trash2, Upload, Wand2 } from 'lucide-react'
 import { brickDefinitions } from '../data/basicBricks'
 import { PLATE_HEIGHT_WORLD } from '../lib/brickUnits'
+import { calculateModelPhysicalSpecs } from '../lib/bricklinkExport'
 import { countBricks, getBlockingBuildPlanIssues, summarizeBuildPlanIssues, validateBuildPlan } from '../lib/planUtils'
 import { useI18n } from '../lib/i18n'
 import { BrickGlyph } from './BrickGlyph'
@@ -24,6 +25,7 @@ type ControlPanelProps = {
   imageName?: string
   onImage: (file?: File) => void
   onGenerate: () => void
+  onRemix: () => void
   onCancelGenerate: () => void
   onOpenPromptPreview: () => void
   plan: BuildPlan
@@ -71,6 +73,7 @@ export const ControlPanel = ({
   imageName,
   onImage,
   onGenerate,
+  onRemix,
   onCancelGenerate,
   onOpenPromptPreview,
   plan,
@@ -89,6 +92,7 @@ export const ControlPanel = ({
   const blockingPlanIssues = useMemo(() => getBlockingBuildPlanIssues(planIssues), [planIssues])
   const planIssueSummary = useMemo(() => summarizeBuildPlanIssues(planIssues, locale), [locale, planIssues])
   const brickCounts = useMemo(() => countBricks(plan), [plan])
+  const physicalSpecs = useMemo(() => calculateModelPhysicalSpecs(plan.bricks), [plan.bricks])
   const packBrickDefinitions = useMemo(
     () => brickDefinitions.filter((brick) => brick.pack === partPackFilter),
     [partPackFilter],
@@ -183,15 +187,23 @@ export const ControlPanel = ({
           <button className="primary" type="button" onClick={onGenerate} disabled={isGenerating}>
             <Sparkles size={17} />
             {isGenerating
-              ? generationStage === 'pass1'
-                ? t('control.generatingPass1')
-                : generationStage === 'pass2'
-                  ? t('control.generatingPass2')
-                  : generationStage === 'repair'
-                    ? t('control.generatingRepair')
-                    : t('control.generating')
+              ? generationStage === 'remix'
+                ? t('control.generatingRemix')
+                : generationStage === 'pass1'
+                  ? t('control.generatingPass1')
+                  : generationStage === 'pass2'
+                    ? t('control.generatingPass2')
+                    : generationStage === 'repair'
+                      ? t('control.generatingRepair')
+                      : t('control.generating')
               : t('control.generatePlan')}
           </button>
+          {!isGenerating && plan.bricks.length > 0 && (
+            <button className="secondary remix-button" type="button" onClick={onRemix}>
+              <Wand2 size={16} />
+              {t('control.remixPlan')}
+            </button>
+          )}
           {!isGenerating && (
             <button className="secondary" type="button" onClick={onOpenPromptPreview}>
               {t('control.previewPrompt')}
@@ -288,6 +300,36 @@ export const ControlPanel = ({
           />
         </label>
         <p>{t('common.parts', { count: plan.bricks.length })} · {t('common.steps', { count: plan.steps.length })} · {t(`control.source.${plan.source}`)}</p>
+        {plan.bricks.length > 0 && (
+          <div className="physical-specs-card">
+            <small>
+              {t('specs.dimensions', {
+                w: physicalSpecs.widthStuds,
+                d: physicalSpecs.depthStuds,
+                h: physicalSpecs.heightStuds,
+                wMm: physicalSpecs.widthMm,
+                dMm: physicalSpecs.depthMm,
+                hMm: physicalSpecs.heightMm,
+              })}
+            </small>
+            <small>
+              {t('specs.budget', {
+                weight: physicalSpecs.weightGrams,
+                usd: physicalSpecs.estimatedUsd,
+                vnd: physicalSpecs.estimatedVnd.toLocaleString(),
+              })}
+            </small>
+            <small>
+              {t('specs.breakdown', {
+                slopes: physicalSpecs.breakdown.slopes,
+                tiles: physicalSpecs.breakdown.tiles,
+                snot: physicalSpecs.breakdown.snot,
+                bricks: physicalSpecs.breakdown.bricks,
+                plates: physicalSpecs.breakdown.plates,
+              })}
+            </small>
+          </div>
+        )}
         <p className={`structure-status ${planIssues.length > 0 ? (blockingPlanIssues.length > 0 ? 'warn' : 'notice') : 'ok'}`}>
           {planIssues.length > 0 ? planIssueSummary : t('common.structureOk')}
         </p>
