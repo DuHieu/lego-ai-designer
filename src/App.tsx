@@ -180,13 +180,14 @@ const parseImportedPlan = (value: unknown, text: ImportText = defaultImportText)
   return buildPlanFromManualJson(value, text)
 }
 
-const workspaceDraftStorageKey = 'brick-flow-agent:workspace-draft:v1'
+const workspaceDraftStorageKey = 'lego-ai-designer:workspace-draft:v1'
+const legacyWorkspaceDraftStorageKey = 'brick-flow-agent:workspace-draft:v1'
 
 const loadWorkspaceDraft = () => {
   if (typeof window === 'undefined') return undefined
 
   try {
-    const stored = window.localStorage.getItem(workspaceDraftStorageKey)
+    const stored = window.localStorage.getItem(workspaceDraftStorageKey) || window.localStorage.getItem(legacyWorkspaceDraftStorageKey)
     if (!stored) return undefined
     const parsed = JSON.parse(stored) as unknown
     if (!isRecord(parsed)) return undefined
@@ -692,7 +693,7 @@ function App() {
     const accepted = nextOverlapScore < currentOverlapScore - 0.000001
 
     if (!accepted && import.meta.env.DEV) {
-      console.warn('brick-flow-agent blocked move', {
+      console.warn('lego-ai-designer blocked move', {
         context,
         currentOverlapScore,
         nextOverlapScore,
@@ -720,7 +721,7 @@ function App() {
     if (!hasCollision) return true
 
     if (import.meta.env.DEV) {
-      console.warn('brick-flow-agent blocked group move', {
+      console.warn('lego-ai-designer blocked group move', {
         context,
         attempted: nextBricks,
       })
@@ -1108,7 +1109,7 @@ function App() {
   ].join('\n')
 
   const exportPromptPreview = () => {
-    downloadFile('brick-flow-agent-llm-prompt.txt', formatPromptPreviewText(), 'text/plain')
+    downloadFile('lego-ai-designer-llm-prompt.txt', formatPromptPreviewText(), 'text/plain')
   }
 
   const renamePlan = (title: string) => {
@@ -1232,7 +1233,7 @@ function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">brick-flow-agent</p>
+            <p className="eyebrow">LEGO AI Designer</p>
             <h1>{t('app.title')}</h1>
           </div>
           <div className="engine-actions">

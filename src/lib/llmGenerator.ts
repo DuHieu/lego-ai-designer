@@ -3,6 +3,7 @@ import type { BrickColor, BuildPlan, GeneratorInput, LlmConfig, PlacedBrick } fr
 import { generateBuildPlan } from './localGenerator'
 import { PLATE_HEIGHT_WORLD, WORLD_EDIT_STEP_STUDS, normalizeHorizontalStud, normalizeYStud, plateHeightToWorldStud } from './brickUnits'
 import { createId, createSingleBrickSteps, findSupportedOpenPose, hasBrickCollision, isBrickSupported, makeBrick } from './planUtils'
+import { detectProviderFromEndpoint } from './aiProviders'
 
 type LlmBrick = {
   brickId?: unknown
@@ -366,9 +367,57 @@ const formatRequestError = async (response: Response, requestMode: LlmConfig['re
   return labels.requestFailed(`${response.status} ${detail.slice(0, 160)}`)
 }
 
+const formatPayloadForEndpoint = (endpoint: string, payload: LlmRequestPayload): LlmRequestPayload => {
+  if (endpoint.includes('api.anthropic.com')) {
+    const rawMessages = Array.isArray(payload.messages) ? payload.messages : []
+    let systemPrompt = ''
+    const anthropicMessages: Array<{ role: string; content: string }> = []
+
+    for (const msg of rawMessages) {
+      if (isRecord(msg)) {
+        if (msg.role === 'system') {
+          systemPrompt += (typeof msg.content === 'string' ? msg.content : '') + '\n'
+        } else if (msg.role === 'user' || msg.role === 'assistant') {
+          anthropicMessages.push({
+            role: msg.role,
+            content: typeof msg.content === 'string' ? msg.content : '',
+          })
+        }
+      }
+    }
+
+    const anthropicPayload: Record<string, unknown> = {
+      model: payload.model,
+      max_tokens: typeof payload.max_tokens === 'number' ? payload.max_tokens : 4096,
+      messages: anthropicMessages,
+    }
+
+    if (systemPrompt.trim()) {
+      anthropicPayload.system = systemPrompt.trim()
+    }
+
+    if (payload.thinking && isRecord(payload.thinking)) {
+      anthropicPayload.thinking = payload.thinking
+    }
+
+    return anthropicPayload
+  }
+
+  const model = typeof payload.model === 'string' ? payload.model.toLowerCase() : ''
+  if (model.includes('deepseek-reasoner')) {
+    const reasonerPayload = { ...payload }
+    delete reasonerPayload.response_format
+    delete reasonerPayload.temperature
+    return reasonerPayload
+  }
+
+  return payload
+}
+
 const requestLlmChat = (config: LlmConfig, payload: LlmRequestPayload, signal: AbortSignal) => {
   const endpoint = config.endpoint.trim()
   const apiKey = config.apiKey.trim()
+  const outgoingPayload = formatPayloadForEndpoint(endpoint, payload)
 
   if (config.requestMode === 'proxy') {
     return fetch('/api/llm/chat', {
@@ -380,7 +429,7 @@ const requestLlmChat = (config: LlmConfig, payload: LlmRequestPayload, signal: A
       body: JSON.stringify({
         endpoint,
         apiKey,
-        payload,
+        payload: outgoingPayload,
       }),
     })
   }
@@ -406,7 +455,7 @@ const requestLlmChat = (config: LlmConfig, payload: LlmRequestPayload, signal: A
       'Content-Type': 'application/json',
     },
     signal,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(outgoingPayload),
   })
 }
 
@@ -418,18 +467,81 @@ const formatFetchError = (error: unknown, requestMode: LlmConfig['requestMode'],
   return error
 }
 
-const applyThinkingMode = (payload: LlmRequestPayload, enableThinking: boolean): LlmRequestPayload => enableThinking
-  ? {
-      ...payload,
+const applyThinkingMode = (
+  payload: LlmRequestPayload,
+  enableThinking: boolean,
+  config?: LlmConfig,
+): LlmRequestPayload => {
+  const cleanPayload = { ...payload }
+  delete cleanPayload.enable_thinking
+  delete cleanPayload.thinking
+  delete cleanPayload.reasoning_effort
+  delete cleanPayload.reasoning
+
+  if (!enableThinking) {
+    return cleanPayload
+  }
+
+  const endpoint = (config?.endpoint ?? '').toLowerCase()
+  const model = (config?.modelName ?? '').toLowerCase()
+  const provider = config?.provider ?? (endpoint ? detectProviderFromEndpoint(endpoint) : 'custom')
+
+  if (provider === 'groq' || endpoint.includes('api.groq.com')) {
+    return cleanPayload
+  }
+
+  if (provider === 'openai' || endpoint.includes('api.openai.com')) {
+    if (model.includes('o1') || model.includes('o3') || model.includes('o4')) {
+      return {
+        ...cleanPayload,
+        reasoning_effort: 'high',
+      }
+    }
+    return cleanPayload
+  }
+
+  if (provider === 'anthropic' || endpoint.includes('api.anthropic.com')) {
+    return {
+      ...cleanPayload,
+      thinking: {
+        type: 'enabled',
+        budget_tokens: 2048,
+      },
+    }
+  }
+
+  if (provider === 'openrouter' || endpoint.includes('openrouter.ai')) {
+    return {
+      ...cleanPayload,
+      reasoning: { effort: 'high' },
+    }
+  }
+
+  if (
+    provider === 'gemini' ||
+    endpoint.includes('googleapis.com') ||
+    provider === 'deepseek' ||
+    endpoint.includes('deepseek.com')
+  ) {
+    return cleanPayload
+  }
+
+  if (provider === 'ollama' || endpoint.includes('localhost:11434')) {
+    return cleanPayload
+  }
+
+  if (endpoint.includes('siliconflow') || endpoint.includes('dashscope') || endpoint.includes('aliyun')) {
+    return {
+      ...cleanPayload,
       enable_thinking: true,
-      thinking: { type: 'enabled' },
-      reasoning_effort: 'high',
     }
-  : {
-      ...payload,
-      enable_thinking: false,
-      thinking: { type: 'disabled' },
-    }
+  }
+
+  return {
+    ...cleanPayload,
+    reasoning_effort: 'high',
+  }
+}
 
 const nudgeToNearbyOpenPose = (brick: PlacedBrick, placed: PlacedBrick[]) => {
   if (!hasBrickCollision(brick, placed)) return brick
@@ -552,7 +664,7 @@ export const testLlmConnection = async (config: LlmConfig, locale: LlmLocale = '
       max_tokens: configTestMaxTokens,
       stream: false,
       response_format: { type: 'json_object' },
-    }, false), controller.signal)
+    }, false, config), controller.signal)
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error(llmText[locale].configTimeout)
@@ -600,7 +712,7 @@ export const generateLlmBuildPlan = async ({ prompt, imageName, config, signal, 
       max_tokens: config.enableThinking ? generationThinkingMaxTokens : generationMaxTokens,
       stream: false,
       response_format: { type: 'json_object' },
-    }, config.enableThinking), controller.signal)
+    }, config.enableThinking, config), controller.signal)
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       if (signal?.aborted) throw new Error(llmText[locale].generationCanceled)

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const workspace = process.cwd()
-const tempDir = await mkdtemp(join(tmpdir(), 'brick-flow-agent-ldraw-structural-'))
+const tempDir = await mkdtemp(join(tmpdir(), 'lego-ai-designer-ldraw-structural-'))
 const entry = join(tempDir, 'entry.ts')
 const outfile = join(tempDir, 'entry.mjs')
 const publicLDrawDir = join(workspace, 'public/ldraw')

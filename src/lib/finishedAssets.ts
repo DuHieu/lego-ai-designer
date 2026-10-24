@@ -3,7 +3,8 @@ import { generateBuildPlan } from './localGenerator'
 import { tryNormalizeImportedPlan } from './planImport'
 import { getBlockingBuildPlanIssues, validateBuildPlan } from './planUtils'
 
-const storageKey = 'brick-flow-agent:finished-assets:v18'
+const storageKey = 'lego-ai-designer:finished-assets:v18'
+const legacyStorageKey = 'brick-flow-agent:finished-assets:v18'
 const retiredDefaultAssetIds = new Set([
   'finished-tiger',
   'finished-toaster',
@@ -103,7 +104,7 @@ const mergeWithDefaultAssets = (assets: FinishedAsset[]) => {
 export const loadFinishedAssets = (): FinishedAsset[] => {
   if (typeof window === 'undefined') return defaultFinishedAssets
 
-  const stored = window.localStorage.getItem(storageKey)
+  const stored = window.localStorage.getItem(storageKey) || window.localStorage.getItem(legacyStorageKey)
   if (!stored) return defaultFinishedAssets
 
   try {

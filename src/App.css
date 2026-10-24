@@ -434,6 +434,13 @@ button.status-pill:hover {
   box-shadow: var(--shadow);
 }
 
+.config-modal {
+  width: min(540px, 100%);
+  max-height: min(88vh, calc(100svh - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .asset-modal {
   width: min(760px, 100%);
   max-height: min(760px, calc(100svh - 36px));
@@ -1317,55 +1324,257 @@ button:disabled {
   color: #991b1b;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1080px) {
   .app-shell {
     height: auto;
     min-height: 100svh;
-    overflow: visible;
+    overflow-y: auto;
+    overflow-x: hidden;
     grid-template-columns: 1fr;
   }
 
   .workspace {
     overflow: visible;
-    padding: 16px;
-    grid-template-rows: auto 460px auto;
+    padding: 18px;
+    grid-template-rows: auto clamp(340px, 50vh, 520px) auto;
+    gap: 16px;
   }
 
   .control-panel {
     height: auto;
     border-left: none;
     border-top: 1px solid var(--line);
+    overflow: visible;
+    padding: 18px;
   }
 
   .toast-region {
     right: 16px;
     left: 16px;
     width: auto;
-  }
-
-  .brick-count-list {
-    overflow: visible;
-    grid-template-columns: 1fr;
+    max-width: 480px;
+    margin: 0 auto;
   }
 
   .brick-counts {
-    max-height: none;
-    overflow: visible;
+    max-height: min(240px, 35svh);
+  }
+
+  .brick-count-list {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 768px) {
   .topbar {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
+    gap: 12px;
+  }
+
+  .topbar > div:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .engine-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
   }
 
   .workspace {
-    grid-template-rows: auto 380px auto;
+    padding: 14px;
+    gap: 14px;
+    grid-template-rows: auto clamp(280px, 44vh, 440px) auto;
   }
 
+  .control-panel {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .provider-options {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+
+  .config-modal {
+    width: min(500px, 100%);
+  }
+
+  .swatches {
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+  }
+}
+
+@media (max-width: 520px) {
   h1 {
-    font-size: 25px;
+    font-size: 22px;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+  }
+
+  .status-pill {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  .icon-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .workspace {
+    padding: 10px;
+    gap: 10px;
+    grid-template-rows: auto clamp(240px, 40vh, 360px) auto;
+  }
+
+  .control-panel {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .panel-section {
+    padding: 12px;
+  }
+
+  .generator-actions {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .generator-actions .primary,
+  .generator-actions .secondary {
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .part-kind-tabs {
+    gap: 4px;
+  }
+
+  .part-kind-tabs button {
+    min-height: 28px;
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .parts-list button {
+    min-height: 52px;
+    padding: 0 6px;
+    gap: 6px;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .swatches {
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+
+  .brick-editor-window {
+    right: 6px;
+    bottom: 6px;
+    width: calc(100% - 12px);
+    max-height: 60%;
+    padding: 10px;
+  }
+
+  .voxel-legend {
+    top: 6px;
+    left: 6px;
+    font-size: 11px;
+    padding: 6px;
+    gap: 5px;
+    max-width: calc(100% - 12px);
+  }
+
+  .modal-backdrop {
+    padding: 8px;
+  }
+
+  .config-modal,
+  .asset-modal,
+  .prompt-preview-modal,
+  .manual-modal {
+    padding: 12px;
+    width: 100%;
+    max-height: calc(100svh - 16px);
+    gap: 12px;
+    border-radius: 8px;
+  }
+
+  .provider-options {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .provider-options button {
+    min-height: 34px;
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+
+  .language-options {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .language-options button {
+    min-height: 32px;
+    font-size: 12px;
+    padding: 0 4px;
+  }
+
+  .request-mode-options {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .manual-page-controls {
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .manual-page-controls button {
+    flex: 1;
+  }
+
+  .manual-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .manual-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .brick-counts {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .brick-count-list {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 6px;
+  }
+
+  .brick-count-list article {
+    padding: 6px;
+    gap: 6px;
   }
 }
 

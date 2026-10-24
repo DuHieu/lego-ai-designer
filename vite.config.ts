@@ -102,6 +102,6 @@ const llmProxyPlugin = () => ({
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/brick-flow-agent/',
+  base: '/lego-ai-designer/',
   plugins: [react(), llmProxyPlugin()],
 })

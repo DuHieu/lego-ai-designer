@@ -79,7 +79,7 @@ export const AI_PROVIDERS: Record<AiProviderType, ProviderMeta> = {
     name: 'Groq',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     defaultModel: 'llama-3.3-70b-versatile',
-    recommendedModels: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'],
+    recommendedModels: ['llama-3.3-70b-versatile', 'deepseek-r1-distill-llama-70b', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
     keyPlaceholder: 'gsk_...',
     docsUrl: 'https://console.groq.com/keys',
     description: 'Ultra high-speed LPU inference.',

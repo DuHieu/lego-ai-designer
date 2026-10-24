@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 
 const completeZipUrl = 'https://library.ldraw.org/library/updates/complete.zip'
 const workspace = process.cwd()
-const tempDir = await mkdtemp(join(tmpdir(), 'brick-flow-agent-ldraw-download-'))
+const tempDir = await mkdtemp(join(tmpdir(), 'lego-ai-designer-ldraw-download-'))
 const entry = join(tempDir, 'entry.ts')
 const outfile = join(tempDir, 'entry.mjs')
 const cacheDir = join(workspace, '.cache/ldraw')

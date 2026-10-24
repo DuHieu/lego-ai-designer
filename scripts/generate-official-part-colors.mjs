@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib'
 
 const workspace = process.cwd()
 const outputPath = join(workspace, 'src/data/officialPartColors.ts')
-const dataDir = process.env.REBRICKABLE_DATA_DIR ?? join(tmpdir(), 'brick-flow-agent-rebrickable-colors')
+const dataDir = process.env.REBRICKABLE_DATA_DIR ?? join(tmpdir(), 'lego-ai-designer-rebrickable-colors')
 const refresh = process.argv.includes('--refresh')
 
 const sources = [

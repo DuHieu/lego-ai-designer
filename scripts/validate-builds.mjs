@@ -21,7 +21,7 @@ const classic10696PartNumbers = [
 ]
 
 const workspace = process.cwd()
-const tempDir = await mkdtemp(join(tmpdir(), 'brick-flow-agent-validate-'))
+const tempDir = await mkdtemp(join(tmpdir(), 'lego-ai-designer-validate-'))
 const entry = join(tempDir, 'entry.ts')
 const outfile = join(tempDir, 'entry.mjs')
 const ldrawConfigSource = await readFile(join(workspace, 'public/ldraw/LDConfig.ldr'), 'utf8')
