@@ -6,7 +6,7 @@ import { BrickScene } from './components/BrickScene'
 import { ControlPanel } from './components/ControlPanel'
 import { brickById, brickDefinitions } from './data/basicBricks'
 import { generateBuildPlan } from './lib/localGenerator'
-import { buildLlmUserPrompt, generateLlmBuildPlan, isLlmConfigComplete, llmSystemPrompt, testLlmConnection } from './lib/llmGenerator'
+import { buildLlmUserPrompt, generateLlmBuildPlan, isLlmConfigComplete, llmSystemPrompt, testLlmConnection, type LlmGenerationStage } from './lib/llmGenerator'
 import { formatBricklinkWantedListXml } from './lib/bricklinkExport'
 import { loadLlmConfig, saveLlmConfig } from './lib/llmConfig'
 import { defaultFinishedAssets, isDefaultFinishedAsset, loadFinishedAssets, saveFinishedAssets } from './lib/finishedAssets'
@@ -16,7 +16,7 @@ import { isValidImportedPose, normalizeImportedPose, tryNormalizeImportedPlan } 
 import { countBricks, createBrickCollisionIndex, duplicateBrick, findSupportedOpenPose, getBlockingBuildPlanIssues, getBrickPlacementDiagnostics, getBrickRawOverlapScore, getConnectedBrickComponents, hasBrickCollision, makeBrick, repairBuildPlan, snapBrickToPlan, summarizeBuildPlanIssues, validateBuildPlan } from './lib/planUtils'
 import { footprintToWorld, getBrickWorldFrame, normalizeHorizontalStud, normalizeQuarterTurns, normalizeVerticalQuarterTurns, normalizeYStud } from './lib/brickUnits'
 import { useI18n } from './lib/i18n'
-import type { AiProviderType, BuildPlan, FinishedAsset, LlmConfig, PlacedBrick } from './types/bricks'
+import type { AiProviderType, BuildCategoryOption, BuildPlan, FinishedAsset, LlmConfig, PlacedBrick } from './types/bricks'
 import './App.css'
 
 const defaultFinishedAssetI18nKeys = new Map(
@@ -231,6 +231,9 @@ function App() {
   }), [t])
   const initialPlan = useMemo(() => workspaceDraft?.plan ?? generateBuildPlan({ prompt: defaultPrompt }), [defaultPrompt, workspaceDraft?.plan])
   const [prompt, setPrompt] = useState(workspaceDraft?.prompt ?? defaultPrompt)
+  const [buildCategory, setBuildCategory] = useState<BuildCategoryOption>('auto')
+  const [isTwoPassEnabled, setIsTwoPassEnabled] = useState(true)
+  const [generationStage, setGenerationStage] = useState<LlmGenerationStage>()
   const [imagePreview, setImagePreview] = useState<string>()
   const [imageName, setImageName] = useState<string>()
   const [plan, setPlanState] = useState<BuildPlan>(initialPlan)
@@ -441,8 +444,8 @@ function App() {
     })
   }, [assetCategoryFilter, assetQuery, localizedFinishedAssets])
   const llmPromptPreview = useMemo(
-    () => buildLlmUserPrompt({ prompt: prompt.trim() || fallbackPrompt, imageName }),
-    [fallbackPrompt, imageName, prompt],
+    () => buildLlmUserPrompt({ prompt: prompt.trim() || fallbackPrompt, imageName, category: buildCategory }),
+    [buildCategory, fallbackPrompt, imageName, prompt],
   )
 
   useEffect(() => {
@@ -607,6 +610,8 @@ function App() {
     const input = {
       prompt: prompt.trim() || fallbackPrompt,
       imageName,
+      category: buildCategory,
+      twoPass: isTwoPassEnabled,
     }
 
     clearGenerationFeedback()
@@ -618,11 +623,18 @@ function App() {
     }
 
     setIsGenerating(true)
+    setGenerationStage('pass1')
     const generationController = new AbortController()
     generationAbortRef.current = generationController
 
     try {
-      const nextPlan = await generateLlmBuildPlan({ ...input, config: llmConfig, signal: generationController.signal, locale })
+      const nextPlan = await generateLlmBuildPlan({
+        ...input,
+        config: llmConfig,
+        signal: generationController.signal,
+        locale,
+        onProgress: setGenerationStage,
+      })
       const issues = validateBuildPlan(nextPlan)
       const blockingIssues = getBlockingBuildPlanIssues(issues)
       if (blockingIssues.length > 0) {
@@ -650,6 +662,7 @@ function App() {
         generationAbortRef.current = undefined
       }
       setIsGenerating(false)
+      setGenerationStage(undefined)
     }
   }
 
@@ -1362,6 +1375,11 @@ function App() {
         onEngineStatusClick={llmEngineStatus === 'connected' ? undefined : () => setIsConfigOpen(true)}
         prompt={prompt}
         setPrompt={setPrompt}
+        buildCategory={buildCategory}
+        setBuildCategory={setBuildCategory}
+        isTwoPassEnabled={isTwoPassEnabled}
+        setIsTwoPassEnabled={setIsTwoPassEnabled}
+        generationStage={generationStage}
         isGenerating={isGenerating}
         imagePreview={imagePreview}
         imageName={imageName}

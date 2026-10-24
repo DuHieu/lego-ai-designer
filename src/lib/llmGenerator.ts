@@ -1,10 +1,11 @@
 import { brickById, brickDefinitions } from '../data/basicBricks'
-import type { BrickColor, BuildPlan, GeneratorInput, LlmConfig, PlacedBrick } from '../types/bricks'
+import type { BrickColor, BuildCategoryOption, BuildPlan, GeneratorInput, LlmConfig, PlacedBrick } from '../types/bricks'
 import { generateBuildPlan } from './localGenerator'
 import { PLATE_HEIGHT_WORLD, WORLD_EDIT_STEP_STUDS, normalizeHorizontalStud, normalizeYStud, plateHeightToWorldStud } from './brickUnits'
-import { createId, createSingleBrickSteps, hasBrickCollision, isBrickSupported, makeBrick } from './planUtils'
+import { createId, createSingleBrickSteps, getBlockingBuildPlanIssues, hasBrickCollision, isBrickSupported, makeBrick, summarizeBuildPlanIssues, validateBuildPlan } from './planUtils'
 import { AI_PROVIDERS, detectProviderFromEndpoint } from './aiProviders'
-import { classifyBuildPrompt, getCategoryPalette } from './promptPalette'
+import { getCategoryPalette, resolveBuildCategory } from './promptPalette'
+import { formatPrefabModulesForPrompt } from './prefabModules'
 
 type LlmBrick = {
   brickId?: unknown
@@ -30,10 +31,13 @@ type LlmPlan = {
   bricks?: unknown
 }
 
+export type LlmGenerationStage = 'pass1' | 'pass2' | 'repair'
+
 type LlmGenerateInput = GeneratorInput & {
   config: LlmConfig
   signal?: AbortSignal
   locale?: LlmLocale
+  onProgress?: (stage: LlmGenerationStage) => void
 }
 
 type LlmRequestPayload = Record<string, unknown>
@@ -195,13 +199,15 @@ const formatLegoHeightForPrompt = (heightStuds: number) =>
 const formatPartForPrompt = (brick: (typeof brickDefinitions)[number]) =>
   `${brick.id}: ${brick.name}, footprint ${brick.footprint.widthStuds}x${brick.footprint.depthStuds}, height ${brick.footprint.heightStuds} studs (${formatLegoHeightForPrompt(brick.footprint.heightStuds)} plates), colors ${brick.colors.join('/')}, inventory ${formatInventoryForPrompt(brick.inventory)}`
 
-const formatPaletteForPrompt = (prompt: string) => {
-  const category = classifyBuildPrompt(prompt)
+const formatPaletteForPrompt = (prompt: string, categoryOverride?: BuildCategoryOption) => {
+  const category = resolveBuildCategory(prompt, categoryOverride)
   const palette = getCategoryPalette(category)
   return {
+    category,
     label: palette.label,
     parts: palette.parts.map(formatPartForPrompt).join('\n'),
     techniques: palette.techniques.map((technique) => `- ${technique}`).join('\n'),
+    prefabs: formatPrefabModulesForPrompt(category),
   }
 }
 
@@ -225,8 +231,8 @@ const formatOfficialReplicaExample = () => {
   return JSON.stringify(example, null, 2)
 }
 
-export const buildLlmUserPrompt = ({ prompt, imageName }: GeneratorInput) => {
-  const palette = formatPaletteForPrompt(prompt)
+export const buildLlmUserPrompt = ({ prompt, imageName, category }: GeneratorInput) => {
+  const palette = formatPaletteForPrompt(prompt, category)
   return `You generate recognizable, structurally sound 3D LEGO brick build plans for a browser 3D editor.
 
 User request: ${prompt}
@@ -238,6 +244,9 @@ ${palette.parts}
 
 DESIGN TECHNIQUES USED BY LEGO DESIGNERS FOR THIS CATEGORY:
 ${palette.techniques}
+
+VERIFIED PREFAB SUB-ASSEMBLIES (Copy or adapt these exact coordinate patterns for reliable foundation & SNOT fit):
+${palette.prefabs}
 
 SNOT (STUDS NOT ON TOP) GEOMETRY:
 - 5 plates stacked (5 x 0.4 = 2.0 studs) equal exactly 2 studs of width, so sideways-mounted parts line up with the grid.
@@ -652,51 +661,178 @@ const lowerUntilSupported = (brick: PlacedBrick, placed: PlacedBrick[]) => {
   return undefined
 }
 
-const normalizeBricks = (rawBricks: unknown, locale: LlmLocale): PlacedBrick[] => {
+type NormalizationDiagnostics = {
+  rawCount: number
+  placedCount: number
+  droppedReasons: string[]
+  nudgedBricks: string[]
+  loweredBricks: string[]
+  surfaceDetailCount: number
+}
+
+const isSurfaceDetailPart = (brickId: string, kind: string) =>
+  kind === 'slope' ||
+  kind === 'tile' ||
+  kind === 'round' ||
+  kind === 'cone' ||
+  brickId.includes('side-studs') ||
+  brickId.includes('headlight') ||
+  brickId.includes('bracket')
+
+const normalizeBricksWithDiagnostics = (
+  rawBricks: unknown,
+  locale: LlmLocale,
+): { bricks: PlacedBrick[]; diagnostics: NormalizationDiagnostics } => {
   if (!Array.isArray(rawBricks)) throw new Error(llmText[locale].missingBricks)
 
   const placed: PlacedBrick[] = []
   const placedCounts = new Map<string, number>()
+  const droppedReasons: string[] = []
+  const nudgedBricks: string[] = []
+  const loweredBricks: string[] = []
+  let surfaceDetailCount = 0
 
   for (const rawBrick of rawBricks.slice(0, maxLlmBricks)) {
     if (!isRecord(rawBrick)) continue
     const brick = rawBrick as LlmBrick
     const brickId = asString(brick.brickId)
     const definition = brickById.get(brickId)
-    if (!definition) continue
+    if (!definition) {
+      if (brickId) droppedReasons.push(`unknown part "${brickId}"`)
+      continue
+    }
     const currentCount = placedCounts.get(brickId) ?? 0
-    if (Number.isFinite(definition.inventory) && currentCount >= definition.inventory) continue
+    if (Number.isFinite(definition.inventory) && currentCount >= definition.inventory) {
+      droppedReasons.push(`inventory exceeded for "${brickId}"`)
+      continue
+    }
 
     const pose = isRecord(brick.pose) ? brick.pose : {}
     const color = asColor(brick.color, definition.colors[0])
     const safeColor = definition.colors.includes(color) ? color : definition.colors[0]
+    const rawX = asHorizontalStudGrid(brick.xStud ?? pose.xStud, 0)
+    const rawY = brick.yStud !== undefined || pose.yStud !== undefined
+      ? asWorldStudGrid(brick.yStud ?? pose.yStud, 0)
+      : asLegacyPlateGrid(brick.yPlate ?? pose.yPlate, 0)
+    const rawZ = asHorizontalStudGrid(brick.zStud ?? pose.zStud, 0)
     const candidate = makeBrick(
       brickId,
       safeColor,
-      asHorizontalStudGrid(brick.xStud ?? pose.xStud, 0),
-      brick.yStud !== undefined || pose.yStud !== undefined
-        ? asWorldStudGrid(brick.yStud ?? pose.yStud, 0)
-        : asLegacyPlateGrid(brick.yPlate ?? pose.yPlate, 0),
-      asHorizontalStudGrid(brick.zStud ?? pose.zStud, 0),
+      rawX,
+      rawY,
+      rawZ,
       clampRotation(brick.rotationQuarterTurns ?? pose.rotationQuarterTurns),
       clampRotation(brick.verticalQuarterTurns ?? pose.verticalQuarterTurns),
     )
     const snapped = candidate
     const openBrick = nudgeToNearbyOpenPose(snapped, placed)
-    if (!openBrick) continue
+    if (!openBrick) {
+      droppedReasons.push(`${brickId} at (${rawX}, ${rawY}, ${rawZ}) collided and had no open nearby spot`)
+      continue
+    }
+    if (openBrick.pose.xStud !== rawX || openBrick.pose.zStud !== rawZ) {
+      nudgedBricks.push(`${brickId} nudged from (${rawX}, ${rawY}, ${rawZ}) to (${openBrick.pose.xStud}, ${rawY}, ${openBrick.pose.zStud}) due to collision`)
+    }
 
     const supportedBrick = lowerUntilSupported(openBrick, placed)
-    if (!supportedBrick) continue
+    if (!supportedBrick) {
+      droppedReasons.push(`${brickId} at (${openBrick.pose.xStud}, ${rawY}, ${openBrick.pose.zStud}) had no vertical support below`)
+      continue
+    }
+    if (Math.abs(supportedBrick.pose.yStud - rawY) > 0.05) {
+      loweredBricks.push(`${brickId} floated at y=${rawY} and was lowered to y=${supportedBrick.pose.yStud}`)
+    }
 
-    placed.push(normalizeBrickPose(supportedBrick))
+    const finalBrick = normalizeBrickPose(supportedBrick)
+    placed.push(finalBrick)
     placedCounts.set(brickId, currentCount + 1)
+    if (isSurfaceDetailPart(brickId, definition.kind)) {
+      surfaceDetailCount += 1
+    }
   }
 
   if (placed.length === 0) throw new Error(llmText[locale].noUsableParts)
-  return placed
+  return {
+    bricks: placed,
+    diagnostics: {
+      rawCount: rawBricks.length,
+      placedCount: placed.length,
+      droppedReasons,
+      nudgedBricks,
+      loweredBricks,
+      surfaceDetailCount,
+    },
+  }
 }
 
 const normalizeSteps = (bricks: PlacedBrick[]) => createSingleBrickSteps(bricks)
+
+const buildLlmRefinementPrompt = ({
+  prompt,
+  category,
+  title,
+  currentBricks,
+  diagnostics,
+  validationSummary,
+}: {
+  prompt: string
+  category?: BuildCategoryOption
+  title: string
+  currentBricks: PlacedBrick[]
+  diagnostics: NormalizationDiagnostics
+  validationSummary: string
+}) => {
+  const palette = formatPaletteForPrompt(prompt, category)
+  const serializedCurrent = currentBricks.map((brick) => ({
+    brickId: brick.brickId,
+    color: brick.color,
+    xStud: brick.pose.xStud,
+    yStud: brick.pose.yStud,
+    zStud: brick.pose.zStud,
+    rotationQuarterTurns: brick.pose.rotationQuarterTurns,
+    verticalQuarterTurns: brick.pose.verticalQuarterTurns ?? 0,
+  }))
+
+  const diagnosticLines = [
+    `- Placed bricks: ${diagnostics.placedCount} (from ${diagnostics.rawCount} requested)`,
+    `- Surface detail pieces (slopes / tiles / SNOT): ${diagnostics.surfaceDetailCount}`,
+    ...(diagnostics.droppedReasons.length > 0
+      ? [`- Dropped bricks due to collision/floating: ${diagnostics.droppedReasons.slice(0, 6).join('; ')}`]
+      : []),
+    ...(diagnostics.nudgedBricks.length > 0
+      ? [`- Colliding bricks that had to be shifted: ${diagnostics.nudgedBricks.slice(0, 6).join('; ')}`]
+      : []),
+    ...(diagnostics.loweredBricks.length > 0
+      ? [`- Floating bricks that had to be lowered: ${diagnostics.loweredBricks.slice(0, 6).join('; ')}`]
+      : []),
+    ...(validationSummary ? [`- Structural validator report: ${validationSummary}`] : []),
+  ].join('\n')
+
+  return `You are running PASS 2 (Surface Detailing + Physical Validator Self-Repair) on a 3D LEGO build plan.
+
+User request: ${prompt}
+Detected build category: ${palette.label}
+Current model title: ${title}
+
+Available parts (curated palette):
+${palette.parts}
+
+PHYSICAL VALIDATOR DIAGNOSTIC REPORT FROM PASS 1:
+${diagnosticLines}
+
+PASS 1 CORE STRUCTURE (JSON):
+${JSON.stringify({ title, bricks: serializedCurrent }, null, 2)}
+
+YOUR TASK IN PASS 2:
+1. Keep the working structural core and silhouette intact so the model remains stable and recognizable.
+2. Fix any misaligned, shifted, or dropped parts noted in the Physical Validator Diagnostic Report above using exact yStud stacking math (brick = 1.2 studs, plate/tile = 0.4 studs).
+3. Upgrade the exterior to retail LEGO Creator / Speed Champions / BrickHeadz quality:
+   - Replace boxy top edges with curved slopes (slope-curved-*) or slopes (slope-*).
+   - Cap exposed flat stud areas with smooth tiles (tile-*) or grille tiles (tile-grille-1x2).
+   - Add SNOT details (headlight-brick-1x1, brick-side-studs-*, bracket-1x2-2x2, tile-eye-1x1) where appropriate for eyes, headlights, vents, or side armor.
+4. Aim for 20 to 40 total bricks with rich 3D depth across both X and Z axes.
+5. Return ONLY valid JSON with keys "title" and "bricks" (each brick having brickId, color, xStud, yStud, zStud, rotationQuarterTurns, verticalQuarterTurns).`
+}
 
 export const isLlmConfigComplete = (config: LlmConfig) => {
   const model = config.modelName.trim()
@@ -715,7 +851,7 @@ export const testLlmConnection = async (config: LlmConfig, locale: LlmLocale = '
   if (!isLlmConfigComplete(config)) throw new Error(llmText[locale].incompleteConfig)
 
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), configTestTimeoutMs)
+  const timeout = globalThis.setTimeout(() => controller.abort(), configTestTimeoutMs)
   let response: Response
 
   try {
@@ -742,7 +878,7 @@ export const testLlmConnection = async (config: LlmConfig, locale: LlmLocale = '
     }
     throw formatFetchError(error, config.requestMode, locale)
   } finally {
-    window.clearTimeout(timeout)
+    globalThis.clearTimeout(timeout)
   }
 
   if (!response.ok) {
@@ -758,13 +894,16 @@ export const testLlmConnection = async (config: LlmConfig, locale: LlmLocale = '
   if (!content) throw new Error(formatEmptyContentError(payload, llmText[locale].configTestContext, locale))
 }
 
-export const generateLlmBuildPlan = async ({ prompt, imageName, config, signal, locale = 'zh-CN' }: LlmGenerateInput): Promise<BuildPlan> => {
-  if (!isLlmConfigComplete(config)) throw new Error(llmText[locale].incompleteConfig)
-
+const callLlmForRawPlan = async (
+  userPrompt: string,
+  config: LlmConfig,
+  signal: AbortSignal | undefined,
+  locale: LlmLocale,
+): Promise<LlmPlan> => {
   const controller = new AbortController()
   const abortFromCaller = () => controller.abort()
   signal?.addEventListener('abort', abortFromCaller)
-  const timeout = window.setTimeout(() => controller.abort(), clientRequestTimeoutMs)
+  const timeout = globalThis.setTimeout(() => controller.abort(), clientRequestTimeoutMs)
   let response: Response
 
   try {
@@ -777,7 +916,7 @@ export const generateLlmBuildPlan = async ({ prompt, imageName, config, signal, 
         },
         {
           role: 'user',
-          content: buildLlmUserPrompt({ prompt, imageName }),
+          content: userPrompt,
         },
       ],
       temperature: 0.2,
@@ -793,7 +932,7 @@ export const generateLlmBuildPlan = async ({ prompt, imageName, config, signal, 
     throw formatFetchError(error, config.requestMode, locale)
   } finally {
     signal?.removeEventListener('abort', abortFromCaller)
-    window.clearTimeout(timeout)
+    globalThis.clearTimeout(timeout)
   }
 
   if (!response.ok) {
@@ -808,17 +947,88 @@ export const generateLlmBuildPlan = async ({ prompt, imageName, config, signal, 
   const content = extractMessageContent(payload)
   if (!content) throw new Error(formatEmptyContentError(payload, llmText[locale].responseContext, locale))
 
-  const rawPlan = parseJsonContent(content, locale)
-  const bricks = normalizeBricks(rawPlan.bricks, locale)
-  const steps = normalizeSteps(bricks)
+  return parseJsonContent(content, locale)
+}
 
-  return {
+export const generateLlmBuildPlan = async ({
+  prompt,
+  imageName,
+  category,
+  twoPass = true,
+  config,
+  signal,
+  locale = 'zh-CN',
+  onProgress,
+}: LlmGenerateInput): Promise<BuildPlan> => {
+  if (!isLlmConfigComplete(config)) throw new Error(llmText[locale].incompleteConfig)
+
+  onProgress?.('pass1')
+  const rawPlan = await callLlmForRawPlan(
+    buildLlmUserPrompt({ prompt, imageName, category }),
+    config,
+    signal,
+    locale,
+  )
+  const { bricks: pass1Bricks, diagnostics: pass1Diagnostics } = normalizeBricksWithDiagnostics(rawPlan.bricks, locale)
+  const pass1Title = asString(rawPlan.title, llmText[locale].generatedTitle)
+  const pass1Plan: BuildPlan = {
     id: createId('plan'),
-    title: asString(rawPlan.title, llmText[locale].generatedTitle),
+    title: pass1Title,
     prompt,
     source: 'llm',
     imageName,
-    bricks,
-    steps,
+    bricks: pass1Bricks,
+    steps: normalizeSteps(pass1Bricks),
   }
+
+  const pass1Issues = validateBuildPlan(pass1Plan)
+  const pass1BlockingIssues = getBlockingBuildPlanIssues(pass1Issues)
+  const needsValidatorRepair =
+    pass1BlockingIssues.length > 0 ||
+    pass1Diagnostics.droppedReasons.length > 0 ||
+    pass1Diagnostics.nudgedBricks.length >= 2 ||
+    pass1Diagnostics.loweredBricks.length >= 2 ||
+    pass1Bricks.length < 12
+
+  if ((twoPass || needsValidatorRepair) && !signal?.aborted) {
+    onProgress?.(needsValidatorRepair && !twoPass ? 'repair' : 'pass2')
+    try {
+      const refinementPrompt = buildLlmRefinementPrompt({
+        prompt,
+        category,
+        title: pass1Title,
+        currentBricks: pass1Bricks,
+        diagnostics: pass1Diagnostics,
+        validationSummary: pass1Issues.length > 0 ? summarizeBuildPlanIssues(pass1Issues, 'en-US') : 'All Pass 1 bricks connected cleanly.',
+      })
+      const refinedRaw = await callLlmForRawPlan(refinementPrompt, config, signal, locale)
+      const { bricks: pass2Bricks, diagnostics: pass2Diagnostics } = normalizeBricksWithDiagnostics(refinedRaw.bricks, locale)
+      const pass2Plan: BuildPlan = {
+        id: createId('plan'),
+        title: asString(refinedRaw.title, pass1Title),
+        prompt,
+        source: 'llm',
+        imageName,
+        bricks: pass2Bricks,
+        steps: normalizeSteps(pass2Bricks),
+      }
+      const pass2BlockingIssues = getBlockingBuildPlanIssues(validateBuildPlan(pass2Plan))
+
+      const isPass2Better =
+        pass2Bricks.length >= Math.min(pass1Bricks.length, 10) &&
+        pass2BlockingIssues.length <= pass1BlockingIssues.length &&
+        (pass2Bricks.length >= pass1Bricks.length || pass2Diagnostics.surfaceDetailCount >= pass1Diagnostics.surfaceDetailCount)
+
+      if (isPass2Better) {
+        return pass2Plan
+      }
+    } catch (error) {
+      if (signal?.aborted || (error instanceof Error && error.message === llmText[locale].generationCanceled)) {
+        throw error
+      }
+      // Graceful fallback to Pass 1 plan if Pass 2 refinement fails
+    }
+  }
+
+  return pass1Plan
 }

@@ -139,7 +139,11 @@ export type FinishedAsset = {
   plan: BuildPlan
 }
 
+export type BuildCategoryOption = 'auto' | 'vehicle' | 'character' | 'creature' | 'building' | 'nature' | 'general'
+
 export type GeneratorInput = {
   prompt: string
   imageName?: string
+  category?: BuildCategoryOption
+  twoPass?: boolean
 }

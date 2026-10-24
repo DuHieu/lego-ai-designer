@@ -5,7 +5,8 @@ import { PLATE_HEIGHT_WORLD } from '../lib/brickUnits'
 import { countBricks, getBlockingBuildPlanIssues, summarizeBuildPlanIssues, validateBuildPlan } from '../lib/planUtils'
 import { useI18n } from '../lib/i18n'
 import { BrickGlyph } from './BrickGlyph'
-import type { BrickPack, BuildPlan } from '../types/bricks'
+import type { BrickPack, BuildCategoryOption, BuildPlan } from '../types/bricks'
+import type { LlmGenerationStage } from '../lib/llmGenerator'
 
 type ControlPanelProps = {
   engineStatusLabel?: string
@@ -13,6 +14,11 @@ type ControlPanelProps = {
   onEngineStatusClick?: () => void
   prompt: string
   setPrompt: (value: string) => void
+  buildCategory: BuildCategoryOption
+  setBuildCategory: (value: BuildCategoryOption) => void
+  isTwoPassEnabled: boolean
+  setIsTwoPassEnabled: (value: boolean) => void
+  generationStage?: LlmGenerationStage
   isGenerating: boolean
   imagePreview?: string
   imageName?: string
@@ -39,6 +45,15 @@ const getHeightLabel = (brick: (typeof brickDefinitions)[number]) =>
 const isInventoryLimited = (inventory: number) => Number.isFinite(inventory)
 const formatInventory = (inventory: number) => isInventoryLimited(inventory) ? String(inventory) : '∞'
 const partPackOptions: BrickPack[] = ['lego', 'minecraft']
+const buildCategoryOptions: BuildCategoryOption[] = [
+  'auto',
+  'vehicle',
+  'character',
+  'creature',
+  'building',
+  'nature',
+  'general',
+]
 
 export const ControlPanel = ({
   engineStatusLabel,
@@ -46,6 +61,11 @@ export const ControlPanel = ({
   onEngineStatusClick,
   prompt,
   setPrompt,
+  buildCategory,
+  setBuildCategory,
+  isTwoPassEnabled,
+  setIsTwoPassEnabled,
+  generationStage,
   isGenerating,
   imagePreview,
   imageName,
@@ -126,6 +146,31 @@ export const ControlPanel = ({
           onChange={(event) => setPrompt(event.target.value)}
           placeholder={t('control.promptPlaceholder')}
         />
+        <div className="generator-options">
+          <label className="generator-select-field">
+            <span>{t('control.styleCategory')}</span>
+            <select
+              value={buildCategory}
+              onChange={(event) => setBuildCategory(event.target.value as BuildCategoryOption)}
+              disabled={isGenerating}
+            >
+              {buildCategoryOptions.map((cat) => (
+                <option key={cat} value={cat}>
+                  {t(`control.category.${cat}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="generator-checkbox-field">
+            <input
+              type="checkbox"
+              checked={isTwoPassEnabled}
+              onChange={(event) => setIsTwoPassEnabled(event.target.checked)}
+              disabled={isGenerating}
+            />
+            <span>{t('control.twoPassMode')}</span>
+          </label>
+        </div>
         <div className="upload-row">
           <label className="file-button">
             <ImageUp size={17} />
@@ -137,7 +182,15 @@ export const ControlPanel = ({
         <div className="generator-actions">
           <button className="primary" type="button" onClick={onGenerate} disabled={isGenerating}>
             <Sparkles size={17} />
-            {isGenerating ? t('control.generating') : t('control.generatePlan')}
+            {isGenerating
+              ? generationStage === 'pass1'
+                ? t('control.generatingPass1')
+                : generationStage === 'pass2'
+                  ? t('control.generatingPass2')
+                  : generationStage === 'repair'
+                    ? t('control.generatingRepair')
+                    : t('control.generating')
+              : t('control.generatePlan')}
           </button>
           {!isGenerating && (
             <button className="secondary" type="button" onClick={onOpenPromptPreview}>

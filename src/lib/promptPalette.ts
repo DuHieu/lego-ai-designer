@@ -139,6 +139,13 @@ export const classifyBuildPrompt = (prompt: string): BuildCategory => {
   return 'general'
 }
 
+export const resolveBuildCategory = (prompt: string, override?: BuildCategory | 'auto'): BuildCategory => {
+  if (override && override !== 'auto') {
+    return override
+  }
+  return classifyBuildPrompt(prompt)
+}
+
 export const getCategoryPalette = (category: BuildCategory) => {
   const profile = profiles[category]
   const ids = [...new Set([...coreParts, ...profile.parts])]
