@@ -85,6 +85,7 @@ export const ControlPanel = ({
   onOpenManual,
 }: ControlPanelProps) => {
   const { locale, t } = useI18n()
+  const [sidebarTab, setSidebarTab] = useState<'all' | 'generate' | 'parts' | 'plan'>('all')
   const [partQuery, setPartQuery] = useState('')
   const [partKindFilter, setPartKindFilter] = useState('all')
   const [partPackFilter, setPartPackFilter] = useState<BrickPack>('lego')
@@ -128,6 +129,41 @@ export const ControlPanel = ({
 
   return (
     <aside className="control-panel">
+      <nav className="sidebar-mode-tabs" aria-label="Workspace sections">
+        <button
+          type="button"
+          className={sidebarTab === 'all' ? 'active' : ''}
+          onClick={() => setSidebarTab('all')}
+        >
+          {t('common.all')}
+        </button>
+        <button
+          type="button"
+          className={sidebarTab === 'generate' ? 'active' : ''}
+          onClick={() => setSidebarTab('generate')}
+        >
+          <Sparkles size={14} />
+          {t('control.generate')}
+        </button>
+        <button
+          type="button"
+          className={sidebarTab === 'parts' ? 'active' : ''}
+          onClick={() => setSidebarTab('parts')}
+        >
+          <Box size={14} />
+          {t('control.partsPack')}
+        </button>
+        <button
+          type="button"
+          className={sidebarTab === 'plan' ? 'active' : ''}
+          onClick={() => setSidebarTab('plan')}
+        >
+          <BookOpen size={14} />
+          {t('control.plan')}
+        </button>
+      </nav>
+
+      {(sidebarTab === 'all' || sidebarTab === 'generate') && (
       <section className="panel-section generator">
         <div className="section-title">
           <Sparkles size={18} />
@@ -216,7 +252,9 @@ export const ControlPanel = ({
           )}
         </div>
       </section>
+      )}
 
+      {(sidebarTab === 'all' || sidebarTab === 'parts') && (
       <section className="panel-section">
         <div className="section-title parts-section-title">
           <div>
@@ -255,7 +293,7 @@ export const ControlPanel = ({
             ))}
           </div>
         </div>
-        <div className="parts-list">
+        <div className={`parts-list ${sidebarTab === 'parts' ? 'parts-list-expanded' : ''}`}>
           {visibleBrickDefinitions.map((brick) => {
             const usedCount = brickCounts[brick.id] ?? 0
             const isOutOfStock = isInventoryLimited(brick.inventory) && usedCount >= brick.inventory
@@ -284,7 +322,9 @@ export const ControlPanel = ({
           {packBrickDefinitions.length > 0 && visibleBrickDefinitions.length === 0 && <p className="muted">{t('control.noParts')}</p>}
         </div>
       </section>
+      )}
 
+      {(sidebarTab === 'all' || sidebarTab === 'plan' || sidebarTab === 'generate') && (
       <section className="panel-section plan-summary">
         <div className="section-title">
           <Upload size={18} />
@@ -358,6 +398,7 @@ export const ControlPanel = ({
           {t('control.resetCanvas')}
         </button>
       </section>
+      )}
     </aside>
   )
 }
