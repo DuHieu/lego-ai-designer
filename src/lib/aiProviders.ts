@@ -85,6 +85,24 @@ export const AI_PROVIDERS: Record<AiProviderType, ProviderMeta> = {
     description: 'Ultra high-speed LPU inference.',
     requiresKey: true,
   },
+  ninerouter: {
+    id: 'ninerouter',
+    name: '9router (Local)',
+    endpoint: 'http://localhost:20128/v1/chat/completions',
+    defaultModel: 'gh/gpt-4o-mini',
+    recommendedModels: [
+      'gh/gpt-4o-mini',
+      'gh/gpt-4o',
+      'cl/anthropic/claude-sonnet-4.6',
+      'kc/google/gemini-2.5-flash',
+      'kc/deepseek/deepseek-chat',
+      'openrouter/qwen/qwen3.6-plus',
+    ],
+    keyPlaceholder: 'Không cần API key (9router cục bộ)',
+    docsUrl: 'http://localhost:20128/dashboard',
+    description: 'Kết nối qua 9router local gateway (port 20128). Hoàn toàn miễn phí & không cần API key.',
+    requiresKey: false,
+  },
   ollama: {
     id: 'ollama',
     name: 'Ollama (Local Offline)',
@@ -118,5 +136,6 @@ export const detectProviderFromEndpoint = (endpoint: string): AiProviderType => 
   if (ep.includes('openrouter.ai')) return 'openrouter'
   if (ep.includes('api.groq.com')) return 'groq'
   if (ep.includes('localhost:11434') || ep.includes('127.0.0.1:11434')) return 'ollama'
+  if (ep.includes(':20128')) return 'ninerouter'
   return 'custom'
 }

@@ -116,6 +116,7 @@ export type AiProviderType =
   | 'ollama'
   | 'openrouter'
   | 'groq'
+  | 'ninerouter'
   | 'custom'
 
 export type LlmConfig = {

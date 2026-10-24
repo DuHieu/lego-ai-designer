@@ -30,13 +30,19 @@ const handleLlmProxyRequest = async (
       apiKey?: string
       payload?: unknown
     }
-    const endpoint = body.endpoint?.trim()
+    const rawEndpoint = body.endpoint?.trim()
+    let endpoint = rawEndpoint
+    if (endpoint?.includes(':20128') && (endpoint.includes('/dashboard') || !endpoint.includes('/chat/completions'))) {
+      endpoint = `${endpoint.replace(/\/dashboard.*$/, '').replace(/\/+$/, '')}/v1/chat/completions`
+    } else if (endpoint?.includes(':11434') && !endpoint.includes('/chat/completions')) {
+      endpoint = `${endpoint.replace(/\/+$/, '')}/v1/chat/completions`
+    }
     const apiKey = body.apiKey?.trim()
 
-    if (!endpoint || !apiKey || !body.payload) {
+    if (!endpoint || !body.payload) {
       response.statusCode = 400
       response.setHeader('Content-Type', 'application/json')
-      response.end(JSON.stringify({ error: 'Missing endpoint, apiKey, or payload' }))
+      response.end(JSON.stringify({ error: 'Missing endpoint or payload' }))
       return
     }
 
@@ -45,12 +51,16 @@ const handleLlmProxyRequest = async (
     let upstream: Response
 
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`
+      }
+
       upstream = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(body.payload),
         signal: controller.signal,
       })

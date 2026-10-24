@@ -3,7 +3,7 @@ import type { BrickColor, BuildPlan, GeneratorInput, LlmConfig, PlacedBrick } fr
 import { generateBuildPlan } from './localGenerator'
 import { PLATE_HEIGHT_WORLD, WORLD_EDIT_STEP_STUDS, normalizeHorizontalStud, normalizeYStud, plateHeightToWorldStud } from './brickUnits'
 import { createId, createSingleBrickSteps, findSupportedOpenPose, hasBrickCollision, isBrickSupported, makeBrick } from './planUtils'
-import { detectProviderFromEndpoint } from './aiProviders'
+import { AI_PROVIDERS, detectProviderFromEndpoint } from './aiProviders'
 
 type LlmBrick = {
   brickId?: unknown
@@ -414,8 +414,31 @@ const formatPayloadForEndpoint = (endpoint: string, payload: LlmRequestPayload):
   return payload
 }
 
+export const normalizeLlmEndpoint = (rawEndpoint: string): string => {
+  let ep = rawEndpoint.trim()
+  if (!ep) return ep
+
+  if (ep.includes(':20128')) {
+    if (ep.includes('/dashboard') || !ep.includes('/chat/completions')) {
+      ep = ep.replace(/\/dashboard.*$/, '').replace(/\/+$/, '')
+      if (!ep.endsWith('/v1/chat/completions')) {
+        ep = `${ep}/v1/chat/completions`
+      }
+    }
+  }
+
+  if (ep.includes(':11434')) {
+    ep = ep.replace(/\/+$/, '')
+    if (!ep.endsWith('/v1/chat/completions')) {
+      ep = `${ep}/v1/chat/completions`
+    }
+  }
+
+  return ep
+}
+
 const requestLlmChat = (config: LlmConfig, payload: LlmRequestPayload, signal: AbortSignal) => {
-  const endpoint = config.endpoint.trim()
+  const endpoint = normalizeLlmEndpoint(config.endpoint)
   const apiKey = config.apiKey.trim()
   const outgoingPayload = formatPayloadForEndpoint(endpoint, payload)
 
@@ -434,26 +457,28 @@ const requestLlmChat = (config: LlmConfig, payload: LlmRequestPayload, signal: A
     })
   }
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (apiKey) {
+    if (endpoint.includes('api.anthropic.com')) {
+      headers['x-api-key'] = apiKey
+      headers['anthropic-version'] = '2023-06-01'
+      headers['anthropic-dangerous-direct-browser-access'] = 'true'
+    } else {
+      headers['Authorization'] = `Bearer ${apiKey}`
+    }
+  }
+
+  if (endpoint.includes('openrouter.ai')) {
+    headers['HTTP-Referer'] = 'https://github.com/DuHieu/lego-ai-designer'
+    headers['X-Title'] = 'LEGO AI Designer'
+  }
+
   return fetch(endpoint, {
     method: 'POST',
-    headers: {
-      ...(apiKey
-        ? endpoint.includes('api.anthropic.com')
-          ? {
-              'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01',
-              'anthropic-dangerous-direct-browser-access': 'true',
-            }
-          : { Authorization: `Bearer ${apiKey}` }
-        : {}),
-      ...(endpoint.includes('openrouter.ai')
-        ? {
-            'HTTP-Referer': 'https://github.com/DuHieu/lego-ai-designer',
-            'X-Title': 'LEGO AI Designer',
-          }
-        : {}),
-      'Content-Type': 'application/json',
-    },
+    headers,
     signal,
     body: JSON.stringify(outgoingPayload),
   })
@@ -486,7 +511,7 @@ const applyThinkingMode = (
   const model = (config?.modelName ?? '').toLowerCase()
   const provider = config?.provider ?? (endpoint ? detectProviderFromEndpoint(endpoint) : 'custom')
 
-  if (provider === 'groq' || endpoint.includes('api.groq.com')) {
+  if (provider === 'groq' || endpoint.includes('api.groq.com') || provider === 'ninerouter' || endpoint.includes(':20128')) {
     return cleanPayload
   }
 
@@ -637,8 +662,18 @@ const normalizeBricks = (rawBricks: unknown, locale: LlmLocale): PlacedBrick[] =
 
 const normalizeSteps = (bricks: PlacedBrick[]) => createSingleBrickSteps(bricks)
 
-export const isLlmConfigComplete = (config: LlmConfig) =>
-  Boolean(config.modelName.trim() && config.endpoint.trim() && config.apiKey.trim())
+export const isLlmConfigComplete = (config: LlmConfig) => {
+  const model = config.modelName.trim()
+  const endpoint = config.endpoint.trim()
+  if (!model || !endpoint) return false
+
+  const ep = endpoint.toLowerCase()
+  const isLocal = ep.includes('localhost') || ep.includes('127.0.0.1') || ep.includes(':20128') || ep.includes(':11434')
+  const provider = config.provider ?? detectProviderFromEndpoint(endpoint)
+  const requiresKey = AI_PROVIDERS[provider]?.requiresKey ?? !isLocal
+
+  return !requiresKey || Boolean(config.apiKey.trim())
+}
 
 export const testLlmConnection = async (config: LlmConfig, locale: LlmLocale = 'zh-CN') => {
   if (!isLlmConfigComplete(config)) throw new Error(llmText[locale].incompleteConfig)
