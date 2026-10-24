@@ -835,13 +835,13 @@ button.status-pill:hover {
   line-height: 1.2;
 }
 
-.manual-inventory div {
+.manual-inventory-list {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
 }
 
-.manual-inventory span {
+.manual-inventory-list span {
   display: inline-flex;
   align-items: center;
   min-height: 26px;
@@ -1187,8 +1187,6 @@ button:disabled {
 }
 
 .remix-button {
-  width: 100%;
-  margin-top: 6px;
   border-color: #93c5fd;
   background: #eff6ff;
   color: #1d4ed8;
@@ -1522,10 +1520,9 @@ button:disabled {
 
   .topbar > div:first-child {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
   }
 
   .engine-actions {

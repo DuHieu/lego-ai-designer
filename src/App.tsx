@@ -1950,7 +1950,7 @@ function App() {
               <p className={`structure-status ${manualIssues.length > 0 ? (manualBlockingIssues.length > 0 ? 'warn' : 'notice') : 'ok'}`}>
                 {manualIssues.length > 0 ? manualIssueSummary : t('common.structureOk')}
               </p>
-              <div>
+              <div className="manual-inventory-list">
                 {buildManual.inventory.map((item) => (
                   <span key={item.key}>
                     {item.name} · {item.color} × {item.quantity}
