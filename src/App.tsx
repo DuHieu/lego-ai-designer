@@ -7,6 +7,7 @@ import { ControlPanel } from './components/ControlPanel'
 import { brickById, brickDefinitions } from './data/basicBricks'
 import { generateBuildPlan } from './lib/localGenerator'
 import { buildLlmUserPrompt, generateLlmBuildPlan, isLlmConfigComplete, llmSystemPrompt, testLlmConnection } from './lib/llmGenerator'
+import { formatBricklinkWantedListXml } from './lib/bricklinkExport'
 import { loadLlmConfig, saveLlmConfig } from './lib/llmConfig'
 import { defaultFinishedAssets, isDefaultFinishedAsset, loadFinishedAssets, saveFinishedAssets } from './lib/finishedAssets'
 import { formatBuildManualHtml, formatBuildManualLDraw, formatBuildManualMarkdown, serializeBuildManual } from './lib/manualSerializer'
@@ -1100,6 +1101,12 @@ function App() {
     downloadFile(`${safeTitle}-steps.ldr`, formatBuildManualLDraw(buildManual), 'text/plain')
   }
 
+  const exportBricklinkWantedList = () => {
+    const title = buildManual?.title || plan.title || 'lego-model'
+    const safeTitle = title.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
+    downloadFile(`${safeTitle}-bricklink-wanted.xml`, formatBricklinkWantedListXml(plan.bricks, title), 'application/xml')
+  }
+
   const formatPromptPreviewText = () => [
     '# system',
     llmSystemPrompt,
@@ -1892,6 +1899,10 @@ function App() {
               <button className="secondary" type="button" onClick={exportManualLDraw} title="LeoCAD / Studio 2.0 compatible LDraw file">
                 <Download size={16} />
                 {t('common.exportLdraw')}
+              </button>
+              <button className="secondary" type="button" onClick={exportBricklinkWantedList} title="Upload at bricklink.com > Wanted > Upload">
+                <Download size={16} />
+                {t('common.exportBricklink')}
               </button>
               <button className="primary compact-primary" type="button" onClick={exportManual}>
                 <Download size={16} />

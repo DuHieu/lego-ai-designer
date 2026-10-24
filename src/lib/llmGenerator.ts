@@ -4,6 +4,7 @@ import { generateBuildPlan } from './localGenerator'
 import { PLATE_HEIGHT_WORLD, WORLD_EDIT_STEP_STUDS, normalizeHorizontalStud, normalizeYStud, plateHeightToWorldStud } from './brickUnits'
 import { createId, createSingleBrickSteps, hasBrickCollision, isBrickSupported, makeBrick } from './planUtils'
 import { AI_PROVIDERS, detectProviderFromEndpoint } from './aiProviders'
+import { classifyBuildPrompt, getCategoryPalette } from './promptPalette'
 
 type LlmBrick = {
   brickId?: unknown
@@ -191,13 +192,18 @@ const formatInventoryForPrompt = (inventory: number) =>
 const formatLegoHeightForPrompt = (heightStuds: number) =>
   Number((heightStuds / PLATE_HEIGHT_WORLD).toFixed(3))
 
-const inventorySummary = brickDefinitions
-  .filter((brick) => brick.pack === 'lego')
-  .map(
-    (brick) =>
-      `${brick.id}: ${brick.name}, footprint ${brick.footprint.widthStuds}x${brick.footprint.depthStuds}, height ${brick.footprint.heightStuds} studs (${formatLegoHeightForPrompt(brick.footprint.heightStuds)} plates), colors ${brick.colors.join('/')}, inventory ${formatInventoryForPrompt(brick.inventory)}`,
-  )
-  .join('\n')
+const formatPartForPrompt = (brick: (typeof brickDefinitions)[number]) =>
+  `${brick.id}: ${brick.name}, footprint ${brick.footprint.widthStuds}x${brick.footprint.depthStuds}, height ${brick.footprint.heightStuds} studs (${formatLegoHeightForPrompt(brick.footprint.heightStuds)} plates), colors ${brick.colors.join('/')}, inventory ${formatInventoryForPrompt(brick.inventory)}`
+
+const formatPaletteForPrompt = (prompt: string) => {
+  const category = classifyBuildPrompt(prompt)
+  const palette = getCategoryPalette(category)
+  return {
+    label: palette.label,
+    parts: palette.parts.map(formatPartForPrompt).join('\n'),
+    techniques: palette.techniques.map((technique) => `- ${technique}`).join('\n'),
+  }
+}
 
 export const llmSystemPrompt = 'You are a professional 3D LEGO master builder and algorithmic build-planning engine. Return compact valid JSON only. Do not include reasoning.'
 
@@ -219,18 +225,30 @@ const formatOfficialReplicaExample = () => {
   return JSON.stringify(example, null, 2)
 }
 
-export const buildLlmUserPrompt = ({ prompt, imageName }: GeneratorInput) => `You generate recognizable, structurally sound 3D LEGO brick build plans for a browser 3D editor.
+export const buildLlmUserPrompt = ({ prompt, imageName }: GeneratorInput) => {
+  const palette = formatPaletteForPrompt(prompt)
+  return `You generate recognizable, structurally sound 3D LEGO brick build plans for a browser 3D editor.
 
 User request: ${prompt}
 Reference image file name: ${imageName || 'none'}
+Detected build category: ${palette.label}
 
-Available parts:
-${inventorySummary}
+Available parts (curated palette for this category):
+${palette.parts}
+
+DESIGN TECHNIQUES USED BY LEGO DESIGNERS FOR THIS CATEGORY:
+${palette.techniques}
+
+SNOT (STUDS NOT ON TOP) GEOMETRY:
+- 5 plates stacked (5 x 0.4 = 2.0 studs) equal exactly 2 studs of width, so sideways-mounted parts line up with the grid.
+- bracket-1x2-2x2 turns a 2x2 stud face to point sideways; brick-side-studs-* and headlight-brick-1x1 expose studs on their side faces.
+- A part mounted on a side stud uses verticalQuarterTurns = 1 (or 3) and must sit flush against that face.
+- Use SNOT only where it adds detail (eyes, lights, grilles, armor); keep the core structure stacked normally.
 
 CRITICAL HEIGHT & STACKING MATH:
 - Standard Bricks (brick-*): Height = 1.2 studs (3 plates)
 - Plates (plate-*) & Tiles (tile-*): Height = 0.4 studs (1 plate)
-- Slopes (slope-*): Height = 1.2 studs (3 plates)
+- Slopes and special parts: use the height listed for each part above.
 - Stacking formula: When placing piece B on piece A: yStud(B) = yStud(A) + height(A)
 - Common vertical elevations:
   * Level 0 (ground): y = 0
@@ -287,6 +305,7 @@ Return only valid JSON with this exact shape:
 
 Good official-replica example, calibrated from LEGO Classic 10696 Ghost:
 ${formatOfficialReplicaExample()}`
+}
 
 const extractTextContent = (value: unknown): string => {
   if (typeof value === 'string') return value
