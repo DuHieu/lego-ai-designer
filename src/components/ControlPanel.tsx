@@ -135,31 +135,31 @@ export const ControlPanel = ({
           className={sidebarTab === 'all' ? 'active' : ''}
           onClick={() => setSidebarTab('all')}
         >
-          {t('common.all')}
+          {t('control.tab.all')}
         </button>
         <button
           type="button"
           className={sidebarTab === 'generate' ? 'active' : ''}
           onClick={() => setSidebarTab('generate')}
         >
-          <Sparkles size={14} />
-          {t('control.generate')}
+          <Sparkles size={13} />
+          {t('control.tab.generate')}
         </button>
         <button
           type="button"
           className={sidebarTab === 'parts' ? 'active' : ''}
           onClick={() => setSidebarTab('parts')}
         >
-          <Box size={14} />
-          {t('control.partsPack')}
+          <Box size={13} />
+          {t('control.tab.parts')}
         </button>
         <button
           type="button"
           className={sidebarTab === 'plan' ? 'active' : ''}
           onClick={() => setSidebarTab('plan')}
         >
-          <BookOpen size={14} />
-          {t('control.plan')}
+          <BookOpen size={13} />
+          {t('control.tab.plan')}
         </button>
       </nav>
 
@@ -234,16 +234,18 @@ export const ControlPanel = ({
                       : t('control.generating')
               : t('control.generatePlan')}
           </button>
-          {!isGenerating && plan.bricks.length > 0 && (
-            <button className="secondary remix-button" type="button" onClick={onRemix}>
-              <Wand2 size={16} />
-              {t('control.remixPlan')}
-            </button>
-          )}
           {!isGenerating && (
-            <button className="secondary" type="button" onClick={onOpenPromptPreview}>
-              {t('control.previewPrompt')}
-            </button>
+            <div className="generator-sub-actions">
+              {plan.bricks.length > 0 && (
+                <button className="secondary remix-button" type="button" onClick={onRemix}>
+                  <Wand2 size={16} />
+                  {t('control.remixPlan')}
+                </button>
+              )}
+              <button className="secondary" type="button" onClick={onOpenPromptPreview}>
+                {t('control.previewPrompt')}
+              </button>
+            </div>
           )}
           {isGenerating && (
             <button className="secondary" type="button" onClick={onCancelGenerate}>
