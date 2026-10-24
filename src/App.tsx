@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Download, Eye, EyeOff, Globe2, KeyRound, Link, Plus, Redo2, Settings2, Trash2, Undo2, Unlink2, X } from 'lucide-react'
+import { BookOpen, Download, Eye, EyeOff, Globe2, KeyRound, Layers, Link, Play, Plus, Redo2, Settings2, Square, Trash2, Undo2, Unlink2, X } from 'lucide-react'
 import { BrickGlyph } from './components/BrickGlyph'
 import { BrickEditorPanel } from './components/BrickEditorPanel'
 import { BrickScene } from './components/BrickScene'
@@ -272,6 +272,9 @@ function App() {
   const [assetCategoryFilter, setAssetCategoryFilter] = useState('all')
   const [isStructuralDebugVisible, setIsStructuralDebugVisible] = useState(false)
   const [isAutoSnapEnabled, setIsAutoSnapEnabled] = useState(false)
+  const [explodeFactor, setExplodeFactor] = useState(0)
+  const [isAutoBuildPlaying, setIsAutoBuildPlaying] = useState(false)
+  const [autoBuildStepIndex, setAutoBuildStepIndex] = useState<number | null>(null)
   const defaultAssetCategoryLabels = useMemo(() => new Set(['自定义', 'Custom']), [])
   const llmConfigComplete = isLlmConfigComplete(llmConfig)
   const llmEngineStatus: LlmEngineStatus = !llmConfigComplete
@@ -422,6 +425,61 @@ function App() {
     const cumulativeIds = new Set(selectedManualStep.cumulativePieceIds)
     return manualSourcePlan.bricks.filter((brick) => cumulativeIds.has(brick.id))
   }, [manualSourcePlan, selectedManualStep])
+  const autoBuildManual = useMemo(
+    () => isAutoBuildPlaying || autoBuildStepIndex !== null
+      ? serializeBuildManual(plan, locale, { groupByLayer: true })
+      : undefined,
+    [autoBuildStepIndex, isAutoBuildPlaying, locale, plan],
+  )
+  const totalAutoBuildSteps = autoBuildManual?.steps.length ?? plan.steps.length
+  const activeAutoBuildStep = autoBuildStepIndex !== null && autoBuildManual
+    ? autoBuildManual.steps[Math.min(autoBuildStepIndex, Math.max(0, autoBuildManual.steps.length - 1))]
+    : undefined
+  const sceneBricks = useMemo(() => {
+    if (!activeAutoBuildStep) return plan.bricks
+    const cumulativeIds = new Set(activeAutoBuildStep.cumulativePieceIds)
+    return plan.bricks.filter((brick) => cumulativeIds.has(brick.id))
+  }, [activeAutoBuildStep, plan.bricks])
+  const sceneHighlightedIds = useMemo(() => {
+    if (activeAutoBuildStep) {
+      return activeAutoBuildStep.addPieces.map((piece) => piece.instanceId)
+    }
+    return activeSelectedIds.filter((id) => id !== selectedId)
+  }, [activeAutoBuildStep, activeSelectedIds, selectedId])
+
+  useEffect(() => {
+    if (!isAutoBuildPlaying) return
+    const stepCount = autoBuildManual?.steps.length ?? 0
+    if (stepCount === 0) {
+      setIsAutoBuildPlaying(false)
+      setAutoBuildStepIndex(null)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setAutoBuildStepIndex((current) => {
+        const next = (current ?? -1) + 1
+        if (next >= stepCount) {
+          setIsAutoBuildPlaying(false)
+          return null
+        }
+        return next
+      })
+    }, 650)
+
+    return () => window.clearTimeout(timer)
+  }, [autoBuildManual?.steps.length, autoBuildStepIndex, isAutoBuildPlaying])
+
+  const toggleAutoBuild = () => {
+    if (isAutoBuildPlaying) {
+      setIsAutoBuildPlaying(false)
+      setAutoBuildStepIndex(null)
+    } else {
+      selectBrick('')
+      setAutoBuildStepIndex(0)
+      setIsAutoBuildPlaying(true)
+    }
+  }
   const localizedFinishedAssets = useMemo(
     () => finishedAssets.map((asset) => localizeFinishedAsset(asset, t)),
     [finishedAssets, t],
@@ -1346,6 +1404,35 @@ function App() {
         </header>
 
         <div className="viewer">
+          {plan.bricks.length > 0 && (
+            <div className="scene-studio-bar">
+              <button
+                type="button"
+                className={`studio-pill-button ${isAutoBuildPlaying ? 'active' : ''}`}
+                onClick={toggleAutoBuild}
+              >
+                {isAutoBuildPlaying ? <Square size={14} /> : <Play size={14} />}
+                <span>
+                  {isAutoBuildPlaying && activeAutoBuildStep
+                    ? `${t('top.stopAutoBuild')} (${t('top.autoBuildProgress', { current: activeAutoBuildStep.stepNumber, total: totalAutoBuildSteps })})`
+                    : t('top.autoBuild')}
+                </span>
+              </button>
+              <label className="studio-explode-control">
+                <Layers size={14} />
+                <span>{t('top.explodeView')}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={Math.round(explodeFactor * 100)}
+                  onChange={(event) => setExplodeFactor(Number(event.target.value) / 100)}
+                />
+                <small>{Math.round(explodeFactor * 100)}%</small>
+              </label>
+            </div>
+          )}
           {isStructuralDebugVisible && (
             <div className="voxel-legend" aria-label={t('voxel.legend')}>
               <span><i style={{ background: '#ef4444' }} />{t('voxel.solid')}</span>
@@ -1356,11 +1443,12 @@ function App() {
             </div>
           )}
           <BrickScene
-            bricks={plan.bricks}
+            bricks={sceneBricks}
             selectedId={selectedId}
             cameraFrameKey={plan.id}
             structuralDebug={isStructuralDebugVisible}
-            highlightedIds={activeSelectedIds.filter((id) => id !== selectedId)}
+            explodeFactor={explodeFactor}
+            highlightedIds={sceneHighlightedIds}
             onSelect={selectBrick}
             onSelectConnected={selectConnectedGroup}
             onNudgeSelected={nudgeSelected}

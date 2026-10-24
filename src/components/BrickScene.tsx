@@ -27,6 +27,7 @@ type BrickSceneProps = {
   highlightedIds?: string[]
   cameraFrameKey?: string
   structuralDebug?: boolean
+  explodeFactor?: number
   onSelect: (id: string) => void
   onSelectConnected?: (id: string) => void
   onNudgeSelected: (delta: { xStud?: number; yStud?: number; zStud?: number }) => void
@@ -1208,6 +1209,7 @@ export const BrickScene = ({
   highlightedIds = [],
   cameraFrameKey,
   structuralDebug = false,
+  explodeFactor = 0,
   onSelect,
   onSelectConnected,
   onNudgeSelected,
@@ -1301,17 +1303,30 @@ export const BrickScene = ({
             onSelect={onSelect}
             onSelectConnected={onSelectConnected}
           />
-        ) : bricks.map((brick) => (
-            <BrickMesh
-              key={brick.id}
-              brick={brick}
-              selected={brick.id === selectedId}
-              highlighted={highlightedIdSet.has(brick.id)}
-              floating={supportedByBrickId.get(brick.id) === false}
-              onSelect={onSelect}
-              onSelectConnected={onSelectConnected}
-            />
-        ))}
+        ) : bricks.map((brick) => {
+          const def = brickById.get(brick.brickId)
+          const frame = def ? getBrickWorldFrame(def, brick.pose) : { x: brick.pose.xStud, y: brick.pose.yStud, z: brick.pose.zStud }
+          const explodeOffset: [number, number, number] = explodeFactor > 0
+            ? [
+                (frame.x - gridFrame.modelCenterX) * explodeFactor * 0.45,
+                Math.max(0, brick.pose.yStud) * explodeFactor * 0.85,
+                (frame.z - gridFrame.modelCenterZ) * explodeFactor * 0.45,
+              ]
+            : [0, 0, 0]
+
+          return (
+            <group key={brick.id} position={explodeOffset}>
+              <BrickMesh
+                brick={brick}
+                selected={brick.id === selectedId}
+                highlighted={highlightedIdSet.has(brick.id)}
+                floating={supportedByBrickId.get(brick.id) === false}
+                onSelect={onSelect}
+                onSelectConnected={onSelectConnected}
+              />
+            </group>
+          )
+        })}
         {bricks.length === 0 && (
           <Text position={[0, 1.2, 0]} fontSize={0.35} color="#475569">
             {t('scene.empty')}
