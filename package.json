@@ -1,0 +1,65 @@
+{
+  "name": "lego-ai-designer",
+  "private": false,
+  "version": "1.0.0",
+  "description": "AI-powered LEGO 3D Designer & Step-by-Step Instruction Generator supporting OpenAI, Claude, Gemini, DeepSeek, Ollama, OpenRouter, and Groq.",
+  "type": "module",
+  "author": "DuHieu",
+  "license": "MIT",
+  "homepage": "https://github.com/DuHieu/lego-ai-designer#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DuHieu/lego-ai-designer.git"
+  },
+  "keywords": [
+    "lego",
+    "ai",
+    "threejs",
+    "ldraw",
+    "cad",
+    "leocad",
+    "building-instructions",
+    "manual",
+    "step-by-step",
+    "openai",
+    "claude",
+    "gemini",
+    "deepseek",
+    "ollama"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "audit:ldraw": "node scripts/audit-ldraw-coverage.mjs",
+    "download:ldraw": "node scripts/download-ldraw-parts.mjs",
+    "generate:part-colors": "node scripts/generate-official-part-colors.mjs",
+    "generate:ldraw": "node scripts/generate-ldraw-structural.mjs",
+    "profile:performance": "node scripts/profile-performance.mjs",
+    "validate:builds": "node scripts/validate-builds.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@react-three/drei": "9.122.0",
+    "@react-three/fiber": "8.17.10",
+    "lucide-react": "0.468.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "three": "0.168.0",
+    "three-bvh-csg": "0.0.17"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.17.0",
+    "@types/node": "22.10.2",
+    "@types/react": "18.3.17",
+    "@types/react-dom": "18.3.5",
+    "@vitejs/plugin-react-swc": "4.3.1",
+    "eslint": "9.17.0",
+    "eslint-plugin-react-hooks": "5.1.0",
+    "eslint-plugin-react-refresh": "0.4.16",
+    "globals": "15.14.0",
+    "typescript": "5.7.2",
+    "typescript-eslint": "8.18.2",
+    "vite": "5.4.11"
+  }
+}
