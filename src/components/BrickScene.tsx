@@ -309,6 +309,173 @@ const GrilleTile1x2Body = ({ color, height }: { color: string; height: number })
   </>
 )
 
+const MinifigLegsBody = ({ color }: { color: string }) => (
+  <>
+    <mesh castShadow receiveShadow position={[0, 0.55, 0]}>
+      <boxGeometry args={[1.96, 0.5, 0.94]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[0, 0.45, 0.48]}>
+      <boxGeometry args={[0.24, 0.3, 0.04]} />
+      <meshStandardMaterial color="#111827" roughness={0.5} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[-0.49, -0.25, 0]}>
+      <boxGeometry args={[0.88, 1.1, 0.88]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[-0.49, -0.65, 0.1]}>
+      <boxGeometry args={[0.88, 0.3, 1.0]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[0.49, -0.25, 0]}>
+      <boxGeometry args={[0.88, 1.1, 0.88]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[0.49, -0.65, 0.1]}>
+      <boxGeometry args={[0.88, 0.3, 1.0]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+  </>
+)
+
+const MinifigTorsoBody = ({ color, brickColor }: { color: string; brickColor: string }) => {
+  const isUniform = brickColor === 'cyan' || brickColor === 'blue' || brickColor === 'white'
+  return (
+    <>
+      <mesh castShadow receiveShadow position={[0, 0.4, 0]}>
+        <boxGeometry args={[1.96, 0.8, 0.94]} />
+        <BrickBodyMaterial color={color} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[0, -0.4, 0]}>
+        <boxGeometry args={[1.72, 0.8, 0.94]} />
+        <BrickBodyMaterial color={color} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[-1.12, 0.05, 0]} rotation={[0, 0, Math.PI / 12]}>
+        <cylinderGeometry args={[0.22, 0.22, 1.1, 16]} />
+        <BrickBodyMaterial color={color} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[-1.24, -0.6, 0.1]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.13, 0.045, 12, 24, Math.PI * 1.5]} />
+        <meshStandardMaterial color="#fbbf24" roughness={0.35} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[-1.24, -0.5, 0.1]}>
+        <cylinderGeometry args={[0.07, 0.07, 0.12, 12]} />
+        <meshStandardMaterial color="#fbbf24" roughness={0.35} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[1.12, 0.05, 0]} rotation={[0, 0, -Math.PI / 12]}>
+        <cylinderGeometry args={[0.22, 0.22, 1.1, 16]} />
+        <BrickBodyMaterial color={color} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[1.24, -0.6, 0.1]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.13, 0.045, 12, 24, Math.PI * 1.5]} />
+        <meshStandardMaterial color="#fbbf24" roughness={0.35} />
+      </mesh>
+      <mesh castShadow receiveShadow position={[1.24, -0.5, 0.1]}>
+        <cylinderGeometry args={[0.07, 0.07, 0.12, 12]} />
+        <meshStandardMaterial color="#fbbf24" roughness={0.35} />
+      </mesh>
+      {isUniform && (
+        <>
+          <mesh position={[0, 0.05, 0.485]}>
+            <boxGeometry args={[0.16, 0.65, 0.02]} />
+            <meshStandardMaterial color="#1e3a8a" roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 0.42, 0.49]}>
+            <boxGeometry args={[0.22, 0.14, 0.025]} />
+            <meshStandardMaterial color="#1e3a8a" roughness={0.4} />
+          </mesh>
+          <mesh position={[-0.42, 0.28, 0.49]}>
+            <boxGeometry args={[0.24, 0.3, 0.025]} />
+            <meshStandardMaterial color="#eab308" roughness={0.2} metalness={0.8} />
+          </mesh>
+          <mesh position={[-0.2, 0.52, 0.485]} rotation={[0, 0, Math.PI / 4]}>
+            <boxGeometry args={[0.28, 0.04, 0.02]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.4} />
+          </mesh>
+          <mesh position={[0.2, 0.52, 0.485]} rotation={[0, 0, -Math.PI / 4]}>
+            <boxGeometry args={[0.28, 0.04, 0.02]} />
+            <meshStandardMaterial color="#f8fafc" roughness={0.4} />
+          </mesh>
+          <mesh position={[0.42, 0.26, 0.485]}>
+            <boxGeometry args={[0.2, 0.22, 0.015]} />
+            <meshStandardMaterial color="#1e3a8a" roughness={0.5} />
+          </mesh>
+        </>
+      )}
+    </>
+  )
+}
+
+const MinifigHeadBody = ({ color, height }: { color: string; height: number }) => (
+  <>
+    <mesh castShadow receiveShadow>
+      <cylinderGeometry args={[0.48, 0.48, height, 36]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh position={[0, height / 2 - 0.04, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <torusGeometry args={[0.44, 0.038, 12, 36]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh position={[0, -height / 2 + 0.04, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <torusGeometry args={[0.44, 0.038, 12, 36]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh position={[-0.17, 0.08, 0.485]}>
+      <cylinderGeometry args={[0.065, 0.065, 0.02, 20]} />
+      <meshStandardMaterial color="#111827" roughness={0.3} depthWrite={false} />
+    </mesh>
+    <mesh position={[-0.15, 0.11, 0.495]}>
+      <cylinderGeometry args={[0.022, 0.022, 0.02, 16]} />
+      <meshStandardMaterial color="#ffffff" roughness={0.2} depthWrite={false} />
+    </mesh>
+    <mesh position={[0.17, 0.08, 0.485]}>
+      <cylinderGeometry args={[0.065, 0.065, 0.02, 20]} />
+      <meshStandardMaterial color="#111827" roughness={0.3} depthWrite={false} />
+    </mesh>
+    <mesh position={[0.19, 0.11, 0.495]}>
+      <cylinderGeometry args={[0.022, 0.022, 0.02, 16]} />
+      <meshStandardMaterial color="#ffffff" roughness={0.2} depthWrite={false} />
+    </mesh>
+    <mesh position={[-0.17, 0.22, 0.48]} rotation={[0, 0, 0.15]}>
+      <boxGeometry args={[0.14, 0.03, 0.02]} />
+      <meshStandardMaterial color="#111827" roughness={0.3} depthWrite={false} />
+    </mesh>
+    <mesh position={[0.17, 0.22, 0.48]} rotation={[0, 0, -0.15]}>
+      <boxGeometry args={[0.14, 0.03, 0.02]} />
+      <meshStandardMaterial color="#111827" roughness={0.3} depthWrite={false} />
+    </mesh>
+    <mesh position={[0, -0.14, 0.48]} rotation={[0, 0, Math.PI]}>
+      <torusGeometry args={[0.16, 0.024, 10, 24, Math.PI * 0.7]} />
+      <meshStandardMaterial color="#111827" roughness={0.3} depthWrite={false} />
+    </mesh>
+  </>
+)
+
+const MinifigCapBody = ({ color }: { color: string }) => (
+  <>
+    <mesh castShadow receiveShadow position={[0, 0.06, 0]}>
+      <cylinderGeometry args={[0.51, 0.53, 0.62, 36]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[0, 0.36, 0]}>
+      <sphereGeometry args={[0.5, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.45]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[0, 0.44, 0]}>
+      <cylinderGeometry args={[0.1, 0.1, 0.08, 16]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh castShadow receiveShadow position={[0, -0.12, 0.58]} rotation={[0.18, 0, 0]}>
+      <boxGeometry args={[0.92, 0.09, 0.62]} />
+      <BrickBodyMaterial color={color} />
+    </mesh>
+    <mesh position={[0, 0.16, 0.535]}>
+      <boxGeometry args={[0.22, 0.22, 0.025]} />
+      <meshStandardMaterial color="#eab308" roughness={0.2} metalness={0.8} />
+    </mesh>
+  </>
+)
+
 const CurvedSlope3x1Body = ({ color, width, height, depth }: { color: string; width: number; height: number; depth: number }) => {
   const outlineGeometry = useMemo(() => createCurvedSlope3x1OutlineGeometry(width, height, depth), [depth, height, width])
 
@@ -880,6 +1047,22 @@ const BrickMeshBody = ({ brick, definition, selected, highlighted, floating, onS
       {isEyeTile ? (
         rotateWithPose(
           <RoundEyeTileBody variant={brick.brickId} height={baseHeight} />
+        )
+      ) : brick.brickId === 'minifig-legs' ? (
+        rotateWithPose(
+          <MinifigLegsBody color={bodyColor} />
+        )
+      ) : brick.brickId === 'minifig-torso' ? (
+        rotateWithPose(
+          <MinifigTorsoBody color={bodyColor} brickColor={brick.color} />
+        )
+      ) : brick.brickId === 'minifig-head' ? (
+        rotateWithPose(
+          <MinifigHeadBody color={bodyColor} height={baseHeight} />
+        )
+      ) : brick.brickId === 'minifig-cap' ? (
+        rotateWithPose(
+          <MinifigCapBody color={bodyColor} />
         )
       ) : brick.brickId === 'tile-grille-1x2' ? (
         rotateWithPose(

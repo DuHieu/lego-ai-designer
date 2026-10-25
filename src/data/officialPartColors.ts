@@ -4,6 +4,8 @@ import type { BrickColor } from '../types/bricks'
 // Re-run `npm run generate:part-colors` to refresh this coarse mapping.
 // Rebrickable color names are folded into the current BrickColor palette.
 export const officialPartColorsByPartNumber: Record<string, BrickColor[]> = {
+  '970': ['blue', 'black', 'gray', 'white', 'red', 'yellow', 'green', 'brown', 'orange', 'tan', 'cyan'],
+  '973': ['blue', 'black', 'gray', 'white', 'red', 'yellow', 'green', 'brown', 'orange', 'tan', 'cyan'],
   '2412': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '2431': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '2479': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'tan'],
@@ -36,6 +38,7 @@ export const officialPartColorsByPartNumber: Record<string, BrickColor[]> = {
   '3184': ['red', 'yellow', 'white', 'black', 'brown'],
   '3622': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '3623': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
+  '3626': ['yellow', 'white', 'black', 'gray', 'red', 'blue', 'orange', 'tan'],
   '3659': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '3660': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '3665': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
@@ -53,6 +56,7 @@ export const officialPartColorsByPartNumber: Record<string, BrickColor[]> = {
   '4073': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '4286': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '4460': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
+  '4485': ['blue', 'black', 'red', 'white', 'yellow', 'green', 'gray', 'orange'],
   '4589': ['red', 'blue', 'yellow', 'green', 'white', 'black', 'gray', 'brown', 'orange', 'tan', 'cyan', 'lime', 'pink'],
   '4600': ['white', 'black', 'gray', 'tan'],
   '4624': ['red', 'blue', 'yellow', 'white', 'gray', 'brown', 'lime', 'pink'],

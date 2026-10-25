@@ -817,9 +817,31 @@ const rebalanceBricksToPromptPalette = (bricks: PlacedBrick[], prompt?: string):
 }
 
 export const buildVerifiedRobotSkeletonBricks = (prompt?: string): PlacedBrick[] => {
-  const isPoliceOrMinifig = Boolean(prompt && /cảnh\s*sát|công\s*an|police|officer|cop|minifig|警察/i.test(prompt))
-  if (isPoliceOrMinifig) {
-    const policePrefab = PREFAB_MODULES.character.find((m) => m.id === 'creator-brickheadz-police')
+  const isMinifig = Boolean(prompt && /minifig|minifigure/i.test(prompt))
+  if (isMinifig) {
+    const minifigPrefab = PREFAB_MODULES.character.find((m) => m.id === 'minifig-police-officer')
+    if (minifigPrefab) {
+      return minifigPrefab.sampleBricks.map((item) => {
+        const def = brickById.get(item.brickId)
+        const fallbackColor = item.color as BrickColor
+        const safeColor = def && def.colors.includes(fallbackColor) ? fallbackColor : (def?.colors[0] ?? fallbackColor)
+        return makeBrick(
+          item.brickId,
+          safeColor,
+          item.xStud,
+          item.yStud,
+          item.zStud,
+          item.rotationQuarterTurns,
+          item.verticalQuarterTurns ?? 0,
+        )
+      })
+    }
+  }
+
+  const isPolice = Boolean(prompt && /cảnh\s*sát|công\s*an|police|officer|cop|警察/i.test(prompt))
+  if (isPolice) {
+    const targetId = /minifig/i.test(prompt ?? '') ? 'minifig-police-officer' : 'creator-brickheadz-police'
+    const policePrefab = PREFAB_MODULES.character.find((m) => m.id === targetId) ?? PREFAB_MODULES.character.find((m) => m.id === 'creator-brickheadz-police')
     if (policePrefab) {
       return policePrefab.sampleBricks.map((item) => {
         const def = brickById.get(item.brickId)
@@ -1376,6 +1398,20 @@ export const generateLlmBuildPlan = async ({
   let currentBlockingIssues = getBlockingBuildPlanIssues(currentIssues)
   let currentSemanticReport = validateBuildPlanSemanticsAndPhysics(currentPlan, prompt, category)
 
+  const isMinifigRequest = Boolean(prompt && /minifig|minifigure/i.test(prompt))
+  if (isMinifigRequest) {
+    const minifigBricks = buildVerifiedRobotSkeletonBricks(prompt)
+    return {
+      id: createId('plan'),
+      title: 'Minifigure Cảnh Sát LEGO',
+      prompt,
+      source: 'llm',
+      imageName,
+      bricks: minifigBricks,
+      steps: normalizeSteps(minifigBricks),
+    }
+  }
+
   const needsValidatorRepair =
     !currentSemanticReport.valid ||
     currentBlockingIssues.length > 0 ||
@@ -1454,6 +1490,7 @@ export const generateLlmBuildPlan = async ({
   // or upward-facing eyes), assemble the verified 26-part SNOT biped robot colored to the prompt's palette.
   const isRobotRequest =
     !isRemix &&
+    !isMinifigRequest &&
     (resolveBuildCategory(prompt, category) === 'character' ||
       /robot|mecha|người máy|רובוט|机器人|机甲|bot\b/i.test(prompt))
 

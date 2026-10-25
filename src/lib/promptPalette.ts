@@ -59,6 +59,7 @@ const profiles: Record<BuildCategory, CategoryProfile> = {
       'tile-eye-1x1', 'tile-eye-centered-1x1', 'tile-eye-closed-1x1', 'tile-eye-offset-1x1',
       'brick-round-1x1', 'cone-1x1-groove', 'round-1x1-plate', 'plate-tooth-1x1',
       'plate-clip-open-1x1', 'plate-bar-end-1x2', 'tile-grille-1x2', 'plate-jumper-1x2',
+      'minifig-legs', 'minifig-torso', 'minifig-head', 'minifig-cap',
     ],
     techniques: [
       'Anatomy from bottom to top: two separate feet, legs, a pelvis plate spanning both legs, torso, shoulders, arms, neck, head.',

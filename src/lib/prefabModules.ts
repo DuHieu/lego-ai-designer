@@ -78,6 +78,19 @@ export const PREFAB_MODULES: Record<BuildCategory, PrefabModule[]> = {
       ],
     },
     {
+      id: 'minifig-police-officer',
+      name: 'LEGO City Police Officer Minifigure (Native Molded Minifig Parts)',
+      category: 'character',
+      description: 'Official LEGO Minifigure Police Officer featuring dark blue hips and legs, light blue (cyan) police uniform torso with necktie and gold badge, yellow smiling head, and dark blue police cap with visor and gold insignia.',
+      sampleBricks: [
+        { brickId: 'plate-4x4', color: 'black', xStud: 0, yStud: 0, zStud: 0, rotationQuarterTurns: 0, verticalQuarterTurns: 0 },
+        { brickId: 'minifig-legs', color: 'blue', xStud: 1, yStud: 0.4, zStud: 1, rotationQuarterTurns: 0, verticalQuarterTurns: 0 },
+        { brickId: 'minifig-torso', color: 'cyan', xStud: 1, yStud: 2.0, zStud: 1, rotationQuarterTurns: 0, verticalQuarterTurns: 0 },
+        { brickId: 'minifig-head', color: 'yellow', xStud: 1.5, yStud: 3.6, zStud: 1, rotationQuarterTurns: 0, verticalQuarterTurns: 0 },
+        { brickId: 'minifig-cap', color: 'blue', xStud: 1.5, yStud: 4.8, zStud: 1, rotationQuarterTurns: 0, verticalQuarterTurns: 0 },
+      ],
+    },
+    {
       id: 'creator-brickheadz-police',
       name: 'BrickHeadz Police Officer Minifigure (33-Part Uniform, SNOT Badge, Yellow Head & Visor Cap)',
       category: 'character',

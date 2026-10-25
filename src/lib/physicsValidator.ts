@@ -45,6 +45,10 @@ interface PartDef {
 }
 
 export const PART_LIBRARY: Record<string, PartDef> = {
+  '970': { name: 'Minifig Hips and Legs', w: 2, d: 1, h: 4, topStuds: true },
+  '973': { name: 'Minifig Torso with Arms', w: 2, d: 1, h: 4, topStuds: true },
+  '3626': { name: 'Minifig Head', w: 1, d: 1, h: 3, topStuds: true },
+  '4485': { name: 'Minifig Cap', w: 1, d: 1, h: 2, topStuds: false },
   '3005': { name: '1x1 Brick', w: 1, d: 1, h: 3, topStuds: true },
   '3004': { name: '1x2 Brick', w: 2, d: 1, h: 3, topStuds: true },
   '3622': { name: '1x3 Brick', w: 3, d: 1, h: 3, topStuds: true },
@@ -94,7 +98,8 @@ export const ARCHETYPES: Record<string, { required: Record<string, number>; minP
   robot: { required: { head: 1, torso: 1, arm: 2, leg: 2, eye: 2 }, minParts: 20 },
   animal: { required: { head: 1, torso: 1, leg: 4 }, minParts: 15 },
   vehicle: { required: { body: 1, wheel: 4 }, minParts: 15 },
-  generic: { required: {}, minParts: 5 },
+  minifig: { required: {}, minParts: 4 },
+  generic: { required: {}, minParts: 4 },
 }
 
 export interface Issue {
@@ -154,7 +159,7 @@ export function validate(model: Model): Report {
       })
       continue
     }
-    if (![p.x, p.y, p.z].every(Number.isInteger) || p.y < 0) {
+    if (![p.x * 2, p.y, p.z * 2].every(Number.isInteger) || p.y < 0) {
       add({
         code: 'BAD_COORD',
         severity: 'error',
@@ -667,16 +672,20 @@ export function validateBuildPlanSemanticsAndPhysics(
   const bricks = plan.bricks
   const category = resolveBuildCategory(prompt, categoryOverride)
   const text = prompt.toLowerCase()
+  const isMinifig = /\bminifig\b|\bminifigure\b/i.test(text) || bricks.some((b) => b.brickId.startsWith('minifig-'))
   const isRobot =
-    category === 'character' ||
-    /\brobot\b|\bmecha\b|\bdroid\b|\bডে\b|người\s*máy|rô[\s-]*bốt|机器人|机甲/.test(text)
-  const archetype = isRobot
-    ? 'robot'
-    : category === 'creature'
-      ? 'animal'
-      : category === 'vehicle'
-        ? 'vehicle'
-        : 'generic'
+    !isMinifig &&
+    (category === 'character' ||
+      /\brobot\b|\bmecha\b|\bdroid\b|\bডে\b|người\s*máy|rô[\s-]*bốt|机器人|机甲/.test(text))
+  const archetype = isMinifig
+    ? 'minifig'
+    : isRobot
+      ? 'robot'
+      : category === 'creature'
+        ? 'animal'
+        : category === 'vehicle'
+          ? 'vehicle'
+          : 'generic'
 
   const archSpec = ARCHETYPES[archetype] ?? ARCHETYPES.generic
 

@@ -33,10 +33,13 @@ const bricklinkColorId: Record<BrickColor, number> = {
  * Only aliases that are certain are listed; everything else passes through.
  */
 const bricklinkPartAlias: Record<string, string> = {
+  '970': '970c00', // Minifig Hips and Legs
+  '973': '973c00', // Minifig Torso with Arms
   '2412': '2412b', // Tile 1x2 Grille with groove
   '3062': '3062b', // Brick Round 1x1 open stud
   '3069': '3069b', // Tile 1x2 with groove
   '3070': '3070b', // Tile 1x1 with groove
+  '3626': '3626c', // Minifig Head
 }
 
 export type WantedListLine = {

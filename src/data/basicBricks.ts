@@ -927,6 +927,57 @@ const fallbackBrickDefinitions: BrickDefinitionDraft[] = [
     inventory: 18,
   },
   ...classic10696ExtraDefinitions,
+  {
+    id: 'minifig-legs',
+    partNumber: '970',
+    name: 'Minifig Hips and Legs',
+    kind: 'brick',
+    footprint: legoPlateFootprint(2, 1, 4),
+    connectors: [
+      ...makeStudGrid('minifig-legs', 2, 1, 4),
+      ...makeTubeGrid('minifig-legs', 2, 1, 0),
+    ],
+    colors: ['blue', 'black', 'gray', 'white', 'red', 'yellow', 'green', 'brown', 'orange', 'tan', 'cyan'],
+    inventory: 16,
+  },
+  {
+    id: 'minifig-torso',
+    partNumber: '973',
+    name: 'Minifig Torso with Arms',
+    kind: 'brick',
+    footprint: legoPlateFootprint(2, 1, 4),
+    connectors: [
+      makeCenterStud('minifig-torso', 2, 1, 4),
+      ...makeTubeGrid('minifig-torso', 2, 1, 0),
+    ],
+    colors: ['cyan', 'blue', 'black', 'gray', 'white', 'red', 'yellow', 'green', 'brown', 'orange', 'tan'],
+    inventory: 16,
+  },
+  {
+    id: 'minifig-head',
+    partNumber: '3626',
+    name: 'Minifig Head',
+    kind: 'round',
+    footprint: legoPlateFootprint(1, 1, 3),
+    connectors: [
+      ...makeStudGrid('minifig-head', 1, 1, 3),
+      ...makeTubeGrid('minifig-head', 1, 1, 0),
+    ],
+    colors: ['yellow', 'white', 'black', 'gray', 'red', 'blue', 'orange', 'tan'],
+    inventory: 16,
+  },
+  {
+    id: 'minifig-cap',
+    partNumber: '4485',
+    name: 'Minifig Baseball / Police Cap',
+    kind: 'cone',
+    footprint: legoPlateFootprint(1, 1, 2),
+    connectors: [
+      ...makeTubeGrid('minifig-cap', 1, 1, 0),
+    ],
+    colors: ['blue', 'black', 'red', 'white', 'yellow', 'green', 'gray', 'orange'],
+    inventory: 16,
+  },
 ]
 
 export const brickDefinitions: BrickDefinition[] = fallbackBrickDefinitions
