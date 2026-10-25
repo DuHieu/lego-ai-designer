@@ -125,7 +125,7 @@ const profiles: Record<BuildCategory, CategoryProfile> = {
 
 const categoryPatterns: Array<[BuildCategory, RegExp]> = [
   ['vehicle', /car|truck|bus|vehicle|race|plane|jet|aircraft|rocket|spaceship|ship|boat|train|tank|bulldozer|excavator|xe|ô tô|oto|máy bay|tên lửa|tàu|thuyền|phi thuyền|汽车|车|飞机|火箭|船/i],
-  ['character', /robot|mecha|droid|android|cyborg|figure|knight|warrior|astronaut|người máy|chiến binh|hiệp sĩ|phi hành gia|nhân vật|người|机器人|机甲|人/i],
+  ['character', /robot|mecha|droid|android|cyborg|figure|minifig|brickheadz|knight|warrior|astronaut|police|officer|cop|firefighter|doctor|pilot|người máy|chiến binh|hiệp sĩ|phi hành gia|cảnh sát|công an|lính cứu hỏa|bác sĩ|phi công|nhân vật|người|机器人|机甲|警察|人/i],
   ['creature', /animal|duck|dog|cat|bird|fish|dragon|dinosaur|bear|rabbit|pet|owl|con |vịt|chó|mèo|chim|cá|rồng|khủng long|gấu|thỏ|cú|动物|鸭|狗|猫|鸟|龙|鱼/i],
   ['building', /house|home|building|castle|tower|temple|church|shop|bridge|nhà|lâu đài|tháp|đền|chùa|cửa hàng|cầu|房|城堡|塔|桥/i],
   ['nature', /tree|flower|plant|forest|garden|cactus|cây|hoa|rừng|vườn|xương rồng|树|花|植物/i],

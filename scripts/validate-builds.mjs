@@ -781,6 +781,9 @@ await writeFile(entry, `
   const blueGrayRobotIssues = validateBuildPlan(blueGrayRobotPlan);
   const blueGrayRobotBlocking = getBlockingBuildPlanIssues(blueGrayRobotIssues);
   const blueGrayRobotSemantic = validateBuildPlanSemanticsAndPhysics(blueGrayRobotPlan, 'chú robot màu xanh xám', 'character');
+  const policeOfficerPlan = generateBuildPlan({ prompt: 'chú cảnh sát đội mũ xanh' });
+  const policeOfficerBlocking = getBlockingBuildPlanIssues(validateBuildPlan(policeOfficerPlan));
+  const policeOfficerSemantic = validateBuildPlanSemanticsAndPhysics(policeOfficerPlan, 'chú cảnh sát', 'character');
 
   if (!goodRobotReport.valid || goodRobotReport.score !== 100) {
     regressionFailures.push('Standalone goodRobot should pass with score 100: ' + JSON.stringify(goodRobotReport));
@@ -793,6 +796,13 @@ await writeFile(entry, `
       pieces: blueGrayRobotPlan.bricks.length,
       blocking: blueGrayRobotBlocking,
       semantic: blueGrayRobotSemantic,
+    }));
+  }
+  if (policeOfficerPlan.bricks.length < 30 || policeOfficerBlocking.length > 0 || !policeOfficerSemantic.valid) {
+    regressionFailures.push('chú cảnh sát plan must have >=30 parts, 0 blocking issues, and valid semantics: ' + JSON.stringify({
+      pieces: policeOfficerPlan.bricks.length,
+      blocking: policeOfficerBlocking,
+      semantic: policeOfficerSemantic,
     }));
   }
 

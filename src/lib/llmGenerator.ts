@@ -817,6 +817,27 @@ const rebalanceBricksToPromptPalette = (bricks: PlacedBrick[], prompt?: string):
 }
 
 export const buildVerifiedRobotSkeletonBricks = (prompt?: string): PlacedBrick[] => {
+  const isPoliceOrMinifig = Boolean(prompt && /cảnh\s*sát|công\s*an|police|officer|cop|minifig|警察/i.test(prompt))
+  if (isPoliceOrMinifig) {
+    const policePrefab = PREFAB_MODULES.character.find((m) => m.id === 'creator-brickheadz-police')
+    if (policePrefab) {
+      return policePrefab.sampleBricks.map((item) => {
+        const def = brickById.get(item.brickId)
+        const fallbackColor = item.color as BrickColor
+        const safeColor = def && def.colors.includes(fallbackColor) ? fallbackColor : (def?.colors[0] ?? fallbackColor)
+        return makeBrick(
+          item.brickId,
+          safeColor,
+          item.xStud,
+          item.yStud,
+          item.zStud,
+          item.rotationQuarterTurns,
+          item.verticalQuarterTurns ?? 0,
+        )
+      })
+    }
+  }
+
   const paletteRule = prompt ? resolvePromptColorPalette(prompt) : undefined
   const primary: BrickColor = paletteRule?.primaryColor ?? 'cyan'
   const secondary: BrickColor = paletteRule?.secondaryColor ?? 'gray'

@@ -326,6 +326,27 @@ const animalPlan = (prompt: string, imageName?: string) => {
   return assemblePlan('小鸭子', prompt, bricks, imageName)
 }
 
+const policeOfficerPlan = (prompt: string, imageName?: string) => {
+  const policePrefab = PREFAB_MODULES.character.find((m) => m.id === 'creator-brickheadz-police')
+  if (!policePrefab) return creatorBipedRobotPlan(prompt, imageName)
+
+  const bricks = policePrefab.sampleBricks.map((item) => {
+    const def = brickById.get(item.brickId)
+    const fallbackColor = item.color as BrickColor
+    const safeColor = def && def.colors.includes(fallbackColor) ? fallbackColor : (def?.colors[0] ?? fallbackColor)
+    return makeBrick(
+      item.brickId,
+      safeColor,
+      item.xStud,
+      item.yStud,
+      item.zStud,
+      item.rotationQuarterTurns,
+      item.verticalQuarterTurns ?? 0,
+    )
+  })
+  return assemblePlan('Chú Cảnh Sát LEGO BrickHeadz', prompt, bricks, imageName)
+}
+
 export const generateBuildPlan = ({ prompt, imageName }: GeneratorInput): BuildPlan => {
   const normalized = prompt.toLowerCase()
 
@@ -338,6 +359,7 @@ export const generateBuildPlan = ({ prompt, imageName }: GeneratorInput): BuildP
   if (/rocket|spaceship|火箭|飞船/.test(normalized)) return rocketPlan(prompt, imageName)
   if (/flower|pot|花|花盆/.test(normalized)) return flowerPlan(prompt, imageName)
   if (/tree|plant|flower|树|植物|花/.test(normalized)) return treePlan(prompt, imageName)
+  if (/cảnh\s*sát|công\s*an|police|officer|cop|minifig|警察/.test(normalized)) return policeOfficerPlan(prompt, imageName)
   if (/robot|mecha|người máy/.test(normalized)) return creatorBipedRobotPlan(prompt, imageName)
   if (/机器人|机甲/.test(normalized)) return robotPlan(prompt, imageName)
   if (/duck|bird|dog|cat|animal|bear|鸭|小鸭|鸟|动物|狗|猫|熊/.test(normalized)) return animalPlan(prompt, imageName)
